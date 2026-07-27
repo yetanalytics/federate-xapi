@@ -316,14 +316,12 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         try {
             ObjectClassHandle classHandle = ambassador.getKnownObjectClassHandle(theObject);
             String className = StringUtils.substringAfterLast(ambassador.getObjectClassName(classHandle), ".");
+            Map<String, byte[]> attributes = new HashMap<>();
             for (AttributeHandle attributeHandle : theAttributes.keySet()) {
                 String attributeName = ambassador.getAttributeName(classHandle, attributeHandle);
-                objectCache.reflectAttributeValue(
-                        theObject.toString(),
-                        className,
-                        attributeName,
-                        theAttributes.get(attributeHandle));
+                attributes.put(attributeName, theAttributes.get(attributeHandle));
             }
+            objectCache.reflectAttributeValues(theObject.toString(), className, attributes);
         } catch (AttributeNotDefined | InvalidAttributeHandle | InvalidObjectClassHandle | ObjectInstanceNotKnown
                 | FederateNotExecutionMember | NotConnected | RTIinternalError | RuntimeException e) {
             logger.error("Error caching reflected object attributes", e);

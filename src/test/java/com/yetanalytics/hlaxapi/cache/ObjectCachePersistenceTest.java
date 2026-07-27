@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.yetanalytics.hlaxapi.FOMXML;
@@ -27,6 +28,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
 
@@ -70,6 +72,159 @@ abstract class ObjectCachePersistenceTest {
                     WHERE a.path_key = 'Hunger'
                     """));
             assertArrayEquals(secondHunger, rawBytes(cache, "Hunger"));
+        }
+    }
+
+    @Test
+    void storesOneMultiAttributeReflectionWithSharedObservationMetadata() throws SQLException {
+        byte[] entityId = encoded(encoderFactory.createHLAASCIIstring("rabbit-one"));
+        byte[] hunger = encoded(encoderFactory.createHLAinteger32BE(75));
+        byte[] position = position(12, 8);
+
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues(
+                    "object-1",
+                    "Rabbit",
+                    Map.of(
+                            "EntityId", entityId,
+                            "Hunger", hunger,
+                            "Position", position));
+
+            assertEquals("rabbit-one", cache.findCurrentValue("object-1", "EntityId").orElseThrow().value());
+            assertEquals(75, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
+            assertEquals(12, cache.findCurrentValue("object-1", "Position.X").orElseThrow().value());
+            assertEquals(8, cache.findCurrentValue("object-1", "Position.Y").orElseThrow().value());
+            assertEquals(1, count(cache, "SELECT COUNT(DISTINCT observed_at) FROM object_attribute_current"));
+            assertEquals(1, count(cache, "SELECT COUNT(DISTINCT sequence) FROM object_attribute_current"));
+            assertEquals(1, count(cache, "SELECT COUNT(*) FROM object_instance WHERE object_handle = 'object-1'"));
+        }
+    }
+
+    @Test
+    void validatesTheCompleteReflectionBeforeWriting() {
+        byte[] oldHunger = encoded(encoderFactory.createHLAinteger32BE(40));
+        byte[] newHunger = encoded(encoderFactory.createHLAinteger32BE(75));
+
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", oldHunger);
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> cache.reflectAttributeValues(
+                            "object-1",
+                            "Rabbit",
+                            Map.of(
+                                    "Hunger", newHunger,
+                                    "NotInTheFom", new byte[] { 1 })));
+
+            assertEquals(40, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
+        }
+    }
+
+    @Test
+    void ignoresEmptyReflections() throws SQLException {
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues("object-1", "Rabbit", Map.of());
+
+            assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_instance"));
+            assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_attribute_current"));
+        }
+    }
+
+    @Test
+    void rollsBackEveryExistingValueWhenAReflectionFails() {
+        byte[] oldEntityId = encoded(encoderFactory.createHLAASCIIstring("rabbit-old"));
+        byte[] oldHunger = encoded(encoderFactory.createHLAinteger32BE(40));
+        byte[] newHunger = encoded(encoderFactory.createHLAinteger32BE(75));
+
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues(
+                    "object-1",
+                    "Rabbit",
+                    Map.of(
+                            "EntityId", oldEntityId,
+                            "Hunger", oldHunger));
+            FomCatalog.ObjectClassDef rabbit = catalog.objectClass("Rabbit").orElseThrow();
+            ReflectedAttributeValues hunger = new ReflectedAttributeValues(
+                    "Hunger",
+                    List.of(new DecodedAttributeValue(
+                            "Hunger",
+                            "HLAinteger32BE",
+                            "HLAinteger32BE",
+                            75,
+                            newHunger,
+                            true)));
+            ReflectedAttributeValues entityId = new ReflectedAttributeValues(
+                    "EntityId",
+                    List.of(new DecodedAttributeValue(
+                            "EntityId",
+                            "HLAASCIIstring",
+                            "HLAASCIIstring",
+                            new Object(),
+                            oldEntityId,
+                            true)));
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> cache.store().replaceCurrentValues(
+                            "object-1",
+                            rabbit,
+                            List.of(hunger, entityId),
+                            "2026-07-27T00:00:00Z",
+                            2));
+
+            assertEquals("rabbit-old", cache.findCurrentValue("object-1", "EntityId").orElseThrow().value());
+            assertEquals(40, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
+        }
+    }
+
+    @Test
+    void rollsBackObjectValuesAndDynamicMetadataWhenAReflectionFails() throws SQLException {
+        try (ObjectCache cache = newCache(
+                "reflection-rollback",
+                enabledConfig(),
+                dynamicArrayCatalog,
+                dynamicArrayFomXml)) {
+            FomCatalog.ObjectClassDef rabbit = dynamicArrayCatalog.objectClass("Rabbit").orElseThrow();
+            byte[] encodedValue = encoded(encoderFactory.createHLAinteger32BE(1));
+            ReflectedAttributeValues positionHistory = new ReflectedAttributeValues(
+                    "PositionHistory",
+                    List.of(
+                            new DecodedAttributeValue(
+                                    "PositionHistory[0].X",
+                                    "HLAinteger32BE",
+                                    "HLAinteger32BE",
+                                    1,
+                                    encodedValue,
+                                    true),
+                            new DecodedAttributeValue(
+                                    "PositionHistory[0].Y",
+                                    "HLAinteger32BE",
+                                    "HLAinteger32BE",
+                                    new Object(),
+                                    encodedValue,
+                                    true)));
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> cache.store().replaceCurrentValues(
+                            "object-rollback",
+                            rabbit,
+                            List.of(positionHistory),
+                            "2026-07-27T00:00:00Z",
+                            1));
+
+            assertEquals(
+                    0,
+                    count(cache, "SELECT COUNT(*) FROM object_instance WHERE object_handle = 'object-rollback'"));
+            assertEquals(
+                    0,
+                    count(cache, """
+                            SELECT COUNT(*)
+                            FROM fom_attribute
+                            WHERE path_key LIKE 'PositionHistory[0].%'
+                            """));
+            assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_attribute_current"));
         }
     }
 

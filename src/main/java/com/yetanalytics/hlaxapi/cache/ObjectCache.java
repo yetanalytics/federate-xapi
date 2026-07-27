@@ -8,6 +8,7 @@ import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TrackedObject;
 import java.sql.Connection;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -121,27 +122,43 @@ public class ObjectCache implements AutoCloseable {
         }
     }
 
-    public synchronized void reflectAttributeValue(
+    public void reflectAttributeValue(
             String objectHandle,
             String className,
             String attributeName,
             byte[] bytes) {
+        reflectAttributeValues(objectHandle, className, Map.of(attributeName, bytes));
+    }
+
+    public synchronized void reflectAttributeValues(
+            String objectHandle,
+            String className,
+            Map<String, byte[]> attributes) {
         if (!isEnabled()) {
             return;
         }
+        if (attributes == null || attributes.isEmpty()) {
+            return;
+        }
         FomCatalog.ObjectClassDef clazz = requireClass(className);
-        CachedObject object = store.ensureObject(objectHandle, null, clazz);
-        FomCatalog.FomAttribute topAttribute = clazz.attribute(attributeName)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "No FOM attribute " + attributeName + " on object class " + className));
-        List<DecodedAttributeValue> values = valueFlattener.flatten(attributeName, topAttribute.dataType(), bytes);
+        List<ReflectedAttributeValues> reflectedAttributes = new ArrayList<>(attributes.size());
+        for (Map.Entry<String, byte[]> attribute : attributes.entrySet()) {
+            String attributeName = attribute.getKey();
+            FomCatalog.FomAttribute topAttribute = clazz.attribute(attributeName)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "No FOM attribute " + attributeName + " on object class " + className));
+            List<DecodedAttributeValue> values = valueFlattener.flatten(
+                    attributeName,
+                    topAttribute.dataType(),
+                    attribute.getValue());
+            reflectedAttributes.add(new ReflectedAttributeValues(attributeName, values));
+        }
         String observedAt = Instant.now().toString();
         long observedSequence = sequence.incrementAndGet();
         store.replaceCurrentValues(
-                object.id(),
+                objectHandle,
                 clazz,
-                attributeName,
-                values,
+                reflectedAttributes,
                 observedAt,
                 observedSequence);
     }
@@ -177,6 +194,10 @@ public class ObjectCache implements AutoCloseable {
 
     Connection connection() {
         return store == null ? null : store.connection();
+    }
+
+    ObjectCacheStore store() {
+        return store;
     }
 
     @Override

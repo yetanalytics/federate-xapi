@@ -117,32 +117,37 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
 
     @Override
     public void replaceCurrentValues(
-            long instanceId,
+            String objectHandle,
             FomCatalog.ObjectClassDef clazz,
-            String attributeName,
-            List<DecodedAttributeValue> values,
+            List<ReflectedAttributeValues> attributes,
             String observedAt,
             long observedSequence) {
+        if (attributes == null || attributes.isEmpty()) {
+            return;
+        }
         boolean autoCommit = currentAutoCommit();
         try {
             connection.setAutoCommit(false);
-            deleteCurrentValues(instanceId, clazz.id(), attributeName);
-            for (DecodedAttributeValue value : values) {
-                Optional<Integer> attributeId = attributeIdForPath(clazz, value.pathKey());
-                if (attributeId.isPresent()) {
-                    upsertCurrentValue(
-                            instanceId,
-                            attributeId.orElseThrow(),
-                            value,
-                            observedAt,
-                            observedSequence);
+            CachedObject object = ensureObject(objectHandle, null, clazz);
+            for (ReflectedAttributeValues attribute : attributes) {
+                deleteCurrentValues(object.id(), clazz.id(), attribute.attributeName());
+                for (DecodedAttributeValue value : attribute.values()) {
+                    Optional<Integer> attributeId = attributeIdForPath(clazz, value.pathKey());
+                    if (attributeId.isPresent()) {
+                        upsertCurrentValue(
+                                object.id(),
+                                attributeId.orElseThrow(),
+                                value,
+                                observedAt,
+                                observedSequence);
+                    }
                 }
             }
             connection.commit();
         } catch (SQLException | RuntimeException e) {
             rollbackAfterReplacementFailure(e);
             throw new IllegalStateException(
-                    "Could not replace current object attribute " + attributeName, e);
+                    "Could not replace reflected object attributes", e);
         } finally {
             restoreAutoCommit(autoCommit);
         }
