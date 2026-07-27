@@ -4,6 +4,7 @@ import com.yetanalytics.hlaxapi.FOMXML;
 import com.yetanalytics.hlaxapi.HLADecoderRegistry;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.Expression;
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TrackedObject;
 import java.sql.Connection;
@@ -21,6 +22,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public class ObjectCache implements AutoCloseable {
 
     private final FomCatalog catalog;
+    private final Map<String, Set<String>> cacheSubscriptions;
+    private final Map<String, Set<String>> eventSubscriptions;
     private final Map<String, Set<String>> subscriptions;
     private final HlaValueFlattener valueFlattener;
     private final CacheQueryService queryService;
@@ -53,10 +56,12 @@ public class ObjectCache implements AutoCloseable {
             HLADecoderRegistry decoderRegistry,
             ObjectCacheConnectionSettings settings) {
         this.catalog = Objects.requireNonNull(catalog, "catalog");
-        this.subscriptions = collectSubscriptions(xapiConfig);
+        this.cacheSubscriptions = collectCacheSubscriptions(xapiConfig);
+        this.eventSubscriptions = collectEventSubscriptions(xapiConfig);
+        this.subscriptions = mergeSubscriptions(cacheSubscriptions, eventSubscriptions);
         this.valueFlattener = new HlaValueFlattener(fomXml, decoderRegistry);
         this.queryService = new CacheQueryService(this);
-        if (!subscriptions.isEmpty()) {
+        if (!cacheSubscriptions.isEmpty()) {
             ObjectCacheConnectionSettings effectiveSettings = settings == null
                     ? ObjectCacheConnectionSettings.from(System.getenv())
                     : settings;
@@ -70,6 +75,18 @@ public class ObjectCache implements AutoCloseable {
 
     public Map<String, Set<String>> subscriptions() {
         return subscriptions;
+    }
+
+    public Map<String, Set<String>> cacheSubscriptions() {
+        return cacheSubscriptions;
+    }
+
+    public Map<String, Set<String>> eventSubscriptions() {
+        return eventSubscriptions;
+    }
+
+    public boolean hasSubscriptions() {
+        return !subscriptions.isEmpty();
     }
 
     public FomCatalog catalog() {
@@ -214,11 +231,43 @@ public class ObjectCache implements AutoCloseable {
                 .orElseThrow(() -> new IllegalArgumentException("No FOM object class " + className));
     }
 
-    private Map<String, Set<String>> collectSubscriptions(XapiConfig xapiConfig) {
+    private Map<String, Set<String>> collectCacheSubscriptions(XapiConfig xapiConfig) {
         Map<String, Set<String>> merged = new LinkedHashMap<>();
         QueryReferenceCollector.collect(xapiConfig.statementTriggers)
                 .forEach((className, attributes) -> addAttributes(merged, className, attributes));
         addTrackedObjects(merged, xapiConfig);
+        return copySubscriptions(merged);
+    }
+
+    private Map<String, Set<String>> collectEventSubscriptions(XapiConfig xapiConfig) {
+        Map<String, Set<String>> events = new LinkedHashMap<>();
+        if (xapiConfig.statementTriggers == null) {
+            return Map.of();
+        }
+        for (StatementTrigger trigger : xapiConfig.statementTriggers) {
+            if (trigger == null
+                    || trigger.type != StatementTrigger.Type.OBJECT_UPDATE
+                    || trigger.clazz == null
+                    || trigger.clazz.isBlank()) {
+                continue;
+            }
+            Optional<FomCatalog.ObjectClassDef> clazz = catalog.objectClass(trigger.clazz);
+            if (clazz.isPresent()) {
+                FomCatalog.ObjectClassDef objectClass = clazz.orElseThrow();
+                addAttributes(events, objectClass.localName(), objectClass.topLevelAttributeNames());
+            } else {
+                addAttributes(events, trigger.clazz, Set.of("*"));
+            }
+        }
+        return copySubscriptions(events);
+    }
+
+    @SafeVarargs
+    private final Map<String, Set<String>> mergeSubscriptions(Map<String, Set<String>>... plans) {
+        Map<String, Set<String>> merged = new LinkedHashMap<>();
+        for (Map<String, Set<String>> plan : plans) {
+            plan.forEach((className, attributes) -> addAttributes(merged, className, attributes));
+        }
         return copySubscriptions(merged);
     }
 

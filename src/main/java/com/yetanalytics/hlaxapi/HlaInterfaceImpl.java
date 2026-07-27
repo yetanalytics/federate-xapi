@@ -221,7 +221,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     private void subscribeObjectClasses()
             throws FederateNotExecutionMember, RestoreInProgress, SaveInProgress, NotConnected, RTIinternalError {
-        if (!objectCache.isEnabled()) {
+        if (!objectCache.hasSubscriptions()) {
             return;
         }
         for (Map.Entry<String, Set<String>> subscription : objectCache.subscriptions().entrySet()) {
@@ -229,10 +229,8 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 FomCatalog.ObjectClassDef clazz = objectCache.catalog().objectClass(subscription.getKey()).orElseThrow(
                         () -> new IllegalArgumentException("No FOM object class " + subscription.getKey()));
                 ObjectClassHandle classHandle = ambassador.getObjectClassHandle(clazz.localName());
-                AttributeHandleSet attributeHandles = ambassador.getAttributeHandleSetFactory().create();
-                for (String attributeName : subscription.getValue()) {
-                    attributeHandles.add(ambassador.getAttributeHandle(classHandle, attributeName));
-                }
+                AttributeHandleSet attributeHandles =
+                        attributeHandles(classHandle, subscription.getValue());
                 if (attributeHandles.isEmpty()) {
                     continue;
                 }
@@ -258,17 +256,49 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             ObjectClassHandle theObjectClass,
             String objectName,
             hla.rti1516e.FederateHandle producingFederate) throws FederateInternalError {
-        if (!objectCache.isEnabled()) {
+        if (!objectCache.hasSubscriptions()) {
             return;
         }
+        String className;
         try {
-            String className = StringUtils.substringAfterLast(ambassador.getObjectClassName(theObjectClass), ".");
-            objectCache.discoverObject(theObject.toString(), objectName, className);
-            logger.info("Discovered object {} as {}", objectName, className);
-        } catch (InvalidObjectClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError
-                | RuntimeException e) {
-            logger.error("Error caching discovered object {}", objectName, e);
+            className = StringUtils.substringAfterLast(ambassador.getObjectClassName(theObjectClass), ".");
+        } catch (InvalidObjectClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError e) {
+            logger.error("Error resolving discovered object {}", objectName, e);
+            return;
         }
+        Set<String> subscribedAttributes = objectCache.subscriptions().get(className);
+        if (subscribedAttributes == null || subscribedAttributes.isEmpty()) {
+            return;
+        }
+        if (objectCache.isEnabled()) {
+            try {
+                objectCache.discoverObject(theObject.toString(), objectName, className);
+            } catch (RuntimeException e) {
+                logger.error("Error caching discovered object {}", objectName, e);
+            }
+        }
+        try {
+            AttributeHandleSet attributeHandles = attributeHandles(theObjectClass, subscribedAttributes);
+            if (!attributeHandles.isEmpty()) {
+                ambassador.requestAttributeValueUpdate(theObject, attributeHandles, new byte[0]);
+            }
+            logger.info("Discovered object {} as {}", objectName, className);
+        } catch (AttributeNotDefined | InvalidObjectClassHandle | NameNotFound | ObjectInstanceNotKnown
+                | FederateNotExecutionMember | SaveInProgress | RestoreInProgress | NotConnected | RTIinternalError
+                | RuntimeException e) {
+            logger.error("Error requesting values for discovered object {}", objectName, e);
+        }
+    }
+
+    private AttributeHandleSet attributeHandles(
+            ObjectClassHandle classHandle,
+            Iterable<String> attributeNames)
+            throws InvalidObjectClassHandle, NameNotFound, FederateNotExecutionMember, NotConnected, RTIinternalError {
+        AttributeHandleSet attributeHandles = ambassador.getAttributeHandleSetFactory().create();
+        for (String attributeName : attributeNames) {
+            attributeHandles.add(ambassador.getAttributeHandle(classHandle, attributeName));
+        }
+        return attributeHandles;
     }
 
     @Override
@@ -310,7 +340,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     }
 
     private void reflectAttributeValues(ObjectInstanceHandle theObject, AttributeHandleValueMap theAttributes) {
-        if (!objectCache.isEnabled()) {
+        if (!objectCache.hasSubscriptions()) {
             return;
         }
         try {
@@ -324,7 +354,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             objectCache.reflectAttributeValues(theObject.toString(), className, attributes);
         } catch (AttributeNotDefined | InvalidAttributeHandle | InvalidObjectClassHandle | ObjectInstanceNotKnown
                 | FederateNotExecutionMember | NotConnected | RTIinternalError | RuntimeException e) {
-            logger.error("Error caching reflected object attributes", e);
+            logger.error("Error processing reflected object attributes", e);
         }
     }
 

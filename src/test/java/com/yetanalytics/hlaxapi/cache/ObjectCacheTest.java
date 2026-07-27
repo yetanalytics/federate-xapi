@@ -66,6 +66,66 @@ class ObjectCacheTest {
     }
 
     @Test
+    void objectUpdateSubscriptionsDoNotEnableCacheAndIncludeInheritedAttributes(@TempDir Path tempDir) {
+        Path databasePath = tempDir.resolve("object-update-only.sqlite");
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(objectUpdateTrigger("Rabbit"));
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + databasePath)) {
+            Set<String> rabbitAttributes =
+                    Set.copyOf(catalog.objectClass("Rabbit").orElseThrow().topLevelAttributeNames());
+
+            assertFalse(cache.isEnabled());
+            assertTrue(cache.cacheSubscriptions().isEmpty());
+            assertEquals(rabbitAttributes, cache.eventSubscriptions().get("Rabbit"));
+            assertEquals(rabbitAttributes, cache.subscriptions().get("Rabbit"));
+            assertTrue(cache.hasSubscriptions());
+            assertFalse(Files.exists(databasePath));
+        }
+    }
+
+    @Test
+    void objectUpdateSubscriptionsMergeWithoutChangingCacheRequirements(@TempDir Path tempDir) {
+        XapiConfig config = configWithQuery();
+        config.statementTriggers = List.of(
+                config.statementTriggers.get(0),
+                objectUpdateTrigger("Rabbit"),
+                objectUpdateTrigger("Rabbit"));
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("object-update-merged.sqlite"))) {
+            Set<String> rabbitAttributes =
+                    Set.copyOf(catalog.objectClass("Rabbit").orElseThrow().topLevelAttributeNames());
+
+            assertTrue(cache.isEnabled());
+            assertEquals(Set.of("EntityId", "Hunger"), cache.cacheSubscriptions().get("Rabbit"));
+            assertEquals(rabbitAttributes, cache.eventSubscriptions().get("Rabbit"));
+            assertEquals(rabbitAttributes, cache.subscriptions().get("Rabbit"));
+        }
+    }
+
+    @Test
+    void retainsUnknownObjectUpdateClassForSubscriptionErrorHandling() {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(objectUpdateTrigger("MissingObject"));
+
+        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+            assertFalse(cache.isEnabled());
+            assertEquals(Set.of("*"), cache.eventSubscriptions().get("MissingObject"));
+            assertEquals(Set.of("*"), cache.subscriptions().get("MissingObject"));
+        }
+    }
+
+    @Test
     void enabledWhenQueryInjectionsExistAndCanQueryReflectedValues(@TempDir Path tempDir) {
         Path databasePath = tempDir.resolve("enabled.sqlite");
 
@@ -223,6 +283,14 @@ class ObjectCacheTest {
         XapiConfig config = new XapiConfig();
         config.objectCacheConfig = objectCacheConfig(trackedObject(className, attributes, allAttributes));
         return config;
+    }
+
+    private StatementTrigger objectUpdateTrigger(String className) {
+        StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.OBJECT_UPDATE;
+        trigger.clazz = className;
+        trigger.statement = "{}";
+        return trigger;
     }
 
     private ObjectCacheConfig objectCacheConfig(TrackedObject... trackedObjects) {
