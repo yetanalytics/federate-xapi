@@ -4,6 +4,7 @@ import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -20,6 +21,7 @@ import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.exception.XapiConfigurationException;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import com.yetanalytics.xapi.util.StatementValidator;
 import com.yetanalytics.xapi.util.StatementValidator.StatementValidationResult;
@@ -91,6 +93,9 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     @Autowired
     private TriggerProcessor triggerProcessor;
+
+    @Autowired
+    private StatementTriggerDispatcher triggerDispatcher;
 
     @Autowired
     private StatementValidator validator;
@@ -351,7 +356,12 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 String attributeName = ambassador.getAttributeName(classHandle, attributeHandle);
                 attributes.put(attributeName, theAttributes.get(attributeHandle));
             }
+            ObjectInjectionContext context =
+                    new ObjectInjectionContext(className, theObject.toString(), attributes);
+            List<StatementTriggerDispatcher.StagedStatement> statements =
+                    triggerDispatcher.stage(StatementTrigger.Type.OBJECT_UPDATE, className, context);
             objectCache.reflectAttributeValues(theObject.toString(), className, attributes);
+            triggerDispatcher.enqueue(statements, xapiClient::sendStatement);
         } catch (AttributeNotDefined | InvalidAttributeHandle | InvalidObjectClassHandle | ObjectInstanceNotKnown
                 | FederateNotExecutionMember | NotConnected | RTIinternalError | RuntimeException e) {
             logger.error("Error processing reflected object attributes", e);
@@ -458,25 +468,11 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             InteractionInjectionContext context = new InteractionInjectionContext(interactionKey,
                     getMapWithParameterNames(interactionClass, theParameters));
 
-            // pass each matching interaction trigger to trigger processor
-            xapiConfig.statementTriggers.stream()
-                    .filter(trigger -> trigger.clazz.equals(interactionKey)
-                            && trigger.type.equals(StatementTrigger.Type.INTERACTION))
-                    .forEach(trigger -> {
-                        logger.trace("Processing trigger for interaction {}", trigger.clazz);
-                        TriggerProcessingResult result = triggerProcessor.processTrigger(trigger, context);
-                        if (result.success() && result.matched()){
-                            try {
-                                xapiClient.sendStatement(result.statement());
-                            } catch (Exception e) {
-                                logger.error("Error parsing or posting statement {}", result.statement(), e);
-                            }
-                        } else if (!result.success()) {
-                            // TODO: DLQ
-                            logger.error("Error processing Interaction: {}", result.error().getMessage(),
-                                result.error());
-                        }
-                    });
+            triggerDispatcher.dispatch(
+                    StatementTrigger.Type.INTERACTION,
+                    interactionKey,
+                    context,
+                    xapiClient::sendStatement);
         } catch (InvalidInteractionClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError e) {
             logger.error("Error ascertaining interaction details!", e);
         }
