@@ -196,7 +196,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             if (st.skipValidation) continue;
             TriggerProcessingResult tpr = triggerProcessor.renderTemplateForValidation(
                     st,
-                    new TestInjectionContext(st.clazz));
+                    new TestInjectionContext(st.type, st.clazz));
             if (tpr.success()) {
                 StatementValidationResult svr = validator.validateStatement(tpr.statement());
                 if (!svr.isValid()){

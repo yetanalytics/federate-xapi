@@ -13,11 +13,13 @@ import org.springframework.stereotype.Component;
 
 import com.yetanalytics.hlaxapi.FOMXML.PathCheckResult;
 import com.yetanalytics.hlaxapi.cache.CachedObject;
+import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
 import com.yetanalytics.hlaxapi.cache.ValueResolution;
 import com.yetanalytics.hlaxapi.config.model.Expression;
 import com.yetanalytics.hlaxapi.config.model.ExpressionWalker;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
@@ -49,6 +51,9 @@ public class InjectionHandler {
     @Autowired
     private HLADecoderRegistry hlaDecoderRegistry;
 
+    @Autowired
+    private FomCatalog fomCatalog;
+
     public InjectionHandler() {
     }
 
@@ -65,31 +70,45 @@ public class InjectionHandler {
     }
 
     public ValueResolution handleTrigger(Target t, TestInjectionContext context) {
-        PathCheckResult pcr = fomXml.checkInteractionParameterPath(context.getHlaClass(), t.parts);
-        Class<?> hlaJavaType = (pcr.exists) ? hlaDecoderRegistry.getClassForType(pcr.primitiveType) : null;
+        EventTargetDefinition target = targetDefinition(
+                context.getHlaClass(),
+                t,
+                context.getTriggerType() == StatementTrigger.Type.OBJECT_UPDATE);
+        Class<?> hlaJavaType =
+                target.exists() ? hlaDecoderRegistry.getClassForType(target.primitiveType()) : null;
         Object result = XapiValueGenerator.getTestValue(context, t, hlaJavaType);
         return ValueResolution.present(result);
     }
 
     public ValueResolution handleTrigger(Target t, InteractionInjectionContext context) {
+        return decodeEventTarget(
+                t,
+                context.getHlaClass(),
+                context.getParameterMap(),
+                false);
+    }
 
-        PathCheckResult pcr = fomXml.checkInteractionParameterPath(context.getHlaClass(), t.parts);
+    private ValueResolution decodeEventTarget(
+            Target target,
+            String hlaClass,
+            Map<String, byte[]> values,
+            boolean objectEvent) {
+        EventTargetDefinition definition = targetDefinition(hlaClass, target, objectEvent);
         Object result = null;
 
-        //Actual Injection
-        byte[] value = interrogateParameters(context.getHlaClass(), true, t.parts, context.getParameterMap());
-        if (value == null)
+        byte[] value = interrogateParameters(target.parts, values, definition.topLevelType());
+        if (value == null) {
             return ValueResolution.missingValue();
+        }
 
-        if (pcr.exists) {
+        if (definition.exists()) {
             try {
-                result = hlaDecoderRegistry.decode(pcr.primitiveType, value);
+                result = hlaDecoderRegistry.decode(definition.primitiveType(), value);
             } catch (DecoderException e) {
                 logger.warn("Problem decoding value:", e);
             }
         } else {
-            // TODO: Properly log context of unfound target
-            logger.warn("Target does not exist in FOM.", t);
+            logger.warn("Target does not exist in FOM: {}", target);
         }
 
         if (result == null) {
@@ -98,8 +117,56 @@ public class InjectionHandler {
         return ValueResolution.present(result);
     }
 
-    private byte[] interrogateParameters(String entityName, boolean isInteraction,
-            List<Object> targetParts, Map<String, byte[]> paramMap) {
+    private EventTargetDefinition targetDefinition(
+            String hlaClass,
+            Target target,
+            boolean objectEvent) {
+        return objectEvent
+                ? objectTargetDefinition(hlaClass, target)
+                : interactionTargetDefinition(hlaClass, target);
+    }
+
+    private EventTargetDefinition interactionTargetDefinition(String hlaClass, Target target) {
+        PathCheckResult path = fomXml.checkInteractionParameterPath(hlaClass, target.parts);
+        String topLevelType = null;
+        String topLevelName = FomCatalog.topLevelTargetPart(target.parts);
+        if (topLevelName != null) {
+            try {
+                topLevelType = fomXml.getParameterType(hlaClass, topLevelName, true);
+            } catch (XPathExpressionException e) {
+                logger.warn("Unable to resolve interaction parameter type for {}.{}", hlaClass, topLevelName, e);
+            }
+        }
+        return new EventTargetDefinition(path.exists, path.primitiveType, topLevelType);
+    }
+
+    private EventTargetDefinition objectTargetDefinition(String hlaClass, Target target) {
+        if (fomCatalog == null) {
+            throw new IllegalStateException("FOM object catalog is not configured");
+        }
+        Optional<FomCatalog.ObjectClassDef> objectClass = fomCatalog.objectClass(hlaClass);
+        if (objectClass.isEmpty()) {
+            return EventTargetDefinition.missing();
+        }
+        String pathKey = FomCatalog.targetPath(target.parts);
+        String topLevelName = FomCatalog.topLevelTargetPart(target.parts);
+        Optional<FomCatalog.FomAttribute> targetAttribute =
+                objectClass.orElseThrow().attribute(pathKey);
+        Optional<FomCatalog.FomAttribute> topLevelAttribute =
+                objectClass.orElseThrow().attribute(topLevelName);
+        if (targetAttribute.isEmpty() || topLevelAttribute.isEmpty()) {
+            return EventTargetDefinition.missing();
+        }
+        return new EventTargetDefinition(
+                true,
+                targetAttribute.orElseThrow().primitiveType(),
+                topLevelAttribute.orElseThrow().dataType());
+    }
+
+    private byte[] interrogateParameters(
+            List<Object> targetParts,
+            Map<String, byte[]> paramMap,
+            String topLevelType) {
         if (targetParts == null || targetParts.isEmpty()) {
             return null;
         }
@@ -115,19 +182,11 @@ public class InjectionHandler {
             return bytes;
         }
 
-        String currentType;
-        try {
-            currentType = fomXml.getParameterType(entityName, parameterName, isInteraction);
-        } catch (XPathExpressionException e) {
-            logger.warn("Unable to resolve parameter type for {}.{}", entityName, parameterName, e);
+        if (topLevelType == null || topLevelType.isEmpty()) {
             return null;
         }
 
-        if (currentType == null || currentType.isEmpty()) {
-            return null;
-        }
-
-        return extractBytesForPath(currentType, targetParts.subList(1, targetParts.size()), bytes);
+        return extractBytesForPath(topLevelType, targetParts.subList(1, targetParts.size()), bytes);
     }
 
     private byte[] extractBytesForPath(String currentType, List<Object> remainingPath, byte[] bytes) {
@@ -232,8 +291,11 @@ public class InjectionHandler {
     }
 
     public ValueResolution handleTrigger(Target t, ObjectInjectionContext context) {
-        // placeholder: return a demo string showing the target and interaction context
-        return ValueResolution.present("[TRIGGER(object):" + t.toString() + ":CONTEXT:" + context.getHlaClass() + "]");
+        return decodeEventTarget(
+                t,
+                context.getHlaClass(),
+                context.getAttributeMap(),
+                true);
     }
 
     public ValueResolution handleQuery(
@@ -304,7 +366,21 @@ public class InjectionHandler {
         this.hlaDecoderRegistry = hdr;
     }
 
+    public void setFomCatalog(FomCatalog fomCatalog) {
+        this.fomCatalog = fomCatalog;
+    }
+
     ObjectCache objectCache() {
         return objectCache;
+    }
+
+    private record EventTargetDefinition(
+            boolean exists,
+            String primitiveType,
+            String topLevelType) {
+
+        private static EventTargetDefinition missing() {
+            return new EventTargetDefinition(false, null, null);
+        }
     }
 }
