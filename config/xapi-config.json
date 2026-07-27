@@ -40,12 +40,52 @@
                     }
                 }
             }
+        },
+        {
+            "type": "ObjectUpdate",
+            "class": "World",
+            "statement": {
+                "actor": {
+                    "objectType": "Agent",
+                    "name": "HLA xAPI Adapter",
+                    "account": {
+                        "homePage": "https://hla-federepl.example/adapters",
+                        "name": "world-monitor"
+                    }
+                },
+                "verb": {
+                    "id": "https://hla-federepl.example/verbs/advanced",
+                    "display": {"en-US": "advanced"}
+                },
+                "object": {
+                    "objectType": "Activity",
+                    "id": "https://hla-federepl.example/simulation/world",
+                    "definition": {
+                        "name": {"en-US": "HLA Federepl world"}
+                    }
+                },
+                "context": {
+                    "extensions": {
+                        "https://hla-federepl.example/extensions/previous-step-number": [
+                            "query",
+                            "World",
+                            ["StepNumber"],
+                            null,
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/current-step-number": [
+                            "trigger",
+                            ["StepNumber"]
+                        ]
+                    }
+                }
+            }
         }
     ],
     "lrs": {
         "host": "http://localhost:8080/xapi",
-        "key": "my_key",
-        "secret": "my_secret",
+        "key": "username",
+        "secret": "password",
         "batch": 35,
         "maxRetries": 3
     }
