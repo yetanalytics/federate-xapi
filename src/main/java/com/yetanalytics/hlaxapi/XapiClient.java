@@ -25,15 +25,22 @@ public class XapiClient {
 
     private StatementClient client;
 
-    private List<Statement> buffer;
+    private List<PendingStatement> buffer;
+
+    private List<PendingStatement> deadLetterQueue;
 
     private StatementValidator validator;
 
-    private Integer batchSize;
+    private int maxBatchSize;
+
+    private int currentBatchSize;
 
     private Integer retryCount = 0;
 
     private Integer maxRetries;
+
+    private static final List<Integer> NON_RETRYABLE_STATUSES = 
+            List.of(400, 401, 403, 404, 405, 406, 407, 413, 414, 415);
 
     public XapiClient(XapiConfig xapiConfig, StatementValidator validator) {
         this.validator = validator;
@@ -44,8 +51,10 @@ public class XapiClient {
             xapiConfig.lrsConfig.batch
         );
         client = new StatementClient(lrs);
-        buffer = new ArrayList<Statement>();
-        batchSize = xapiConfig.lrsConfig.batch;
+        buffer = new ArrayList<PendingStatement>();
+        deadLetterQueue = new ArrayList<PendingStatement>();
+        maxBatchSize = xapiConfig.lrsConfig.batch;
+        currentBatchSize = maxBatchSize;
         maxRetries = xapiConfig.lrsConfig.maxRetries;
     }
 
@@ -68,38 +77,75 @@ public class XapiClient {
     /** Synchronized buffer methods */
 
     private synchronized void addToBuffer(Statement stmt){
-        buffer.add(stmt);
+        buffer.add(new PendingStatement(stmt));
     }
 
     // Check and post buffer to LRS every 10 seconds (or ENV) if contains statements
     @Scheduled(fixedRateString = "${xapi.buffer.clear-rate:10000}")
     private synchronized void clearBuffer() {
         logger.info("Buffer Size: {}", buffer.size());
-        if (buffer.size() > 0){
-            try {
-                List<UUID> results = client.postStatements(buffer);
-                logger.info("Stored statements: {}", results);
-                buffer = new ArrayList<Statement>();
-                logger.info("Cleared Buffer");
-                retryCount = 0;
-            } catch (StatementClientException e) {
-                logger.error("Error sending statements to LRS:", e);
-                if (retryCount < maxRetries) {
-                    retryCount++;
-                    logger.info("Retrying to send statements to LRS, attempt {}/{}", retryCount, maxRetries);
-                } else {
-                    // TODO: For durability, we should write the buffer to a file or database or DLQ for retrying later
-                    // might be a case for a light queueing system like RabbitMQ. Also failures will be reduced if we
-                    // pre-validate statements before sending to the LRS. Also we may want to reduce the accrual of
-                    // statements in the buffer if we have a DLQ strategy, that way less innocent statements are lost.
-                    // For now, we will just clear the buffer after max retries.
-                    // TODO: Additionally we should consider a cap on the buffer size, and if it exceeds that cap,
-                    // we should start dropping statements or writing to a DLQ.
-                    buffer = new ArrayList<Statement>();
+        if (buffer.isEmpty()) {
+            return;
+        }
+
+        List<PendingStatement> batch = 
+                new ArrayList<>(buffer.subList(0, Math.min(currentBatchSize, buffer.size())));
+        if (batch.isEmpty()) {
+            return;
+        }
+
+        List<Statement> statementsToSend = batch.stream()
+            .map(pending -> pending.statement)
+            .toList();
+
+        try {
+            List<UUID> results = client.postStatements(statementsToSend);
+            logger.info("Stored statements: {}", results);
+            buffer.removeAll(batch);
+            
+            if (buffer.size() == 0) {
+                logger.info("Buffer cleared");
+            } else {
+                logger.info("Buffer partially cleared: {} statements remain", buffer.size());
+            }
+            
+            retryCount = 0;
+            // double the current batch size for the next attempt, but do not exceed the configured batch size
+            currentBatchSize = Math.min(maxBatchSize, Math.max(1, currentBatchSize * 2));
+        } catch (StatementClientException e) {
+            logger.error("Error sending statements to LRS:", e);
+
+            if (!NON_RETRYABLE_STATUSES.contains(e.getStatusCode())) {
+                // Retryable error (e.g. 5xx or network error), increment retry count and check if it exceeds max retries
+                retryCount++;
+                if (retryCount > maxRetries) {
+                    deadLetterQueue.addAll(batch);
+                    buffer.removeAll(batch);
                     retryCount = 0;
-                    logger.info("Cleared Buffer after max retries, statement data lost!");
+                    logger.info("Moved {} statements to dead-letter queue after exceeding max retries", batch.size());
+                } else {
+                    logger.info("Retrying batch of {} statements, attempt {}/{}", batch.size(), retryCount, maxRetries);
+                }
+            } else {
+                // Non-retryable error (e.g. 4xx probably statement related), move to dead-letter queue if size 1, or reduce batch size
+                if (currentBatchSize > 1) {
+                    currentBatchSize = Math.max(1, currentBatchSize / 2);
+                    logger.info("Non-retryable error, reducing batch size to {}", currentBatchSize);
+                } else {
+                    deadLetterQueue.addAll(batch);
+                    buffer.removeAll(batch);
+                    retryCount = 0;
+                    logger.info("Moved {} statements to dead-letter queue after non-retryable failure", batch.size());
                 }
             }
+        }
+    }
+
+    private static class PendingStatement {
+        private final Statement statement;
+        
+        private PendingStatement(Statement statement) {
+            this.statement = statement;
         }
     }
 

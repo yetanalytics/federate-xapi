@@ -20,6 +20,7 @@ import com.yetanalytics.xapi.client.LRS;
 import com.yetanalytics.xapi.client.StatementClient;
 import com.yetanalytics.xapi.exception.StatementClientException;
 import com.yetanalytics.xapi.model.Statement;
+import com.yetanalytics.xapi.util.Mapper;
 import com.yetanalytics.xapi.util.StatementValidator;
 
 class XapiClientTest {
@@ -103,10 +104,11 @@ class XapiClientTest {
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
-    void clearBufferKeepsStatementsWhenClientErrorsBeforeMaxRetries() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+    void clearBufferKeepsStatementsWhenRetryableClientErrorsBeforeMaxRetries() throws Exception {
+        XapiClient xapiClient = new XapiClient(config(4, 2), new StatementValidator());
         FakeStatementClient fakeClient = new FakeStatementClient();
         fakeClient.failuresRemaining = 1;
+        fakeClient.statusCodeToThrow = 503;
         setClient(xapiClient, fakeClient);
 
         xapiClient.sendStatement(STATEMENT_JSON);
@@ -119,10 +121,11 @@ class XapiClientTest {
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
-    void clearBufferClearsStatementsAfterMaxRetries() throws Exception {
+    void clearBufferMovesBatchToDeadLetterQueueAfterMaxRetries() throws Exception {
         XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
         FakeStatementClient fakeClient = new FakeStatementClient();
         fakeClient.failuresRemaining = 2;
+        fakeClient.statusCodeToThrow = 503;
         setClient(xapiClient, fakeClient);
 
         xapiClient.sendStatement(STATEMENT_JSON);
@@ -131,7 +134,95 @@ class XapiClientTest {
 
         assertEquals(2, fakeClient.postAttempts);
         assertEquals(0, buffer(xapiClient).size());
+        assertEquals(1, deadLetterQueue(xapiClient).size());
         assertEquals(0, retryCount(xapiClient));
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
+    void clearBufferReducesBatchSizeOnNonRetryableError() throws Exception {
+        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+        FakeStatementClient fakeClient = new FakeStatementClient();
+        fakeClient.statusCodeToThrow = 400;
+        fakeClient.failuresRemaining = 3;
+        setClient(xapiClient, fakeClient);
+
+        xapiClient.sendStatement(STATEMENT_JSON);
+        xapiClient.sendStatement(STATEMENT_JSON);
+        xapiClient.sendStatement(STATEMENT_JSON);
+        clearBuffer(xapiClient);
+
+        assertEquals(1, fakeClient.postAttempts);
+        assertEquals(3, buffer(xapiClient).size());
+        assertEquals(2, currentBatchSize(xapiClient));
+
+        clearBuffer(xapiClient);
+        assertEquals(2, fakeClient.postAttempts);
+        assertEquals(3, buffer(xapiClient).size());
+        assertEquals(1, currentBatchSize(xapiClient));
+
+        clearBuffer(xapiClient);
+        assertEquals(3, fakeClient.postAttempts);
+        assertEquals(2, buffer(xapiClient).size());
+        assertEquals(1, deadLetterQueue(xapiClient).size());
+        assertEquals(1, currentBatchSize(xapiClient));
+
+        clearBuffer(xapiClient);
+        assertEquals(4, fakeClient.postAttempts);
+        assertEquals(1, buffer(xapiClient).size());
+        assertEquals(1, deadLetterQueue(xapiClient).size());
+        assertEquals(2, currentBatchSize(xapiClient));
+
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
+    void clearBufferDeadLettersSingleStatementAfterNonRetryableFailure() throws Exception {
+        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator());
+        FakeStatementClient fakeClient = new FakeStatementClient();
+        fakeClient.failuresRemaining = 2;
+        fakeClient.statusCodeToThrow = 400;
+        setClient(xapiClient, fakeClient);
+
+        xapiClient.sendStatement(STATEMENT_JSON);
+        clearBuffer(xapiClient);
+        clearBuffer(xapiClient);
+        clearBuffer(xapiClient);
+
+        assertEquals(0, buffer(xapiClient).size());
+        assertEquals(1, deadLetterQueue(xapiClient).size());
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
+    void clearBufferUsesConfiguredBatchSize() throws Exception {
+        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator());
+        FakeStatementClient fakeClient = new FakeStatementClient();
+        setClient(xapiClient, fakeClient);
+
+        xapiClient.sendStatement(STATEMENT_JSON);
+        xapiClient.sendStatement(STATEMENT_JSON);
+        xapiClient.sendStatement(STATEMENT_JSON);
+        clearBuffer(xapiClient);
+
+        assertEquals(2, fakeClient.lastBatchSize);
+        assertEquals(1, buffer(xapiClient).size());
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
+    void clearBufferMovesFailedStatementsToDeadLetterQueueAfterMaxRetries() throws Exception {
+        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator());
+        FakeStatementClient fakeClient = new FakeStatementClient();
+        fakeClient.failuresRemaining = 2;
+        setClient(xapiClient, fakeClient);
+
+        xapiClient.sendStatement(STATEMENT_JSON);
+        clearBuffer(xapiClient);
+        clearBuffer(xapiClient);
+
+        assertEquals(0, buffer(xapiClient).size());
+        assertEquals(1, deadLetterQueue(xapiClient).size());
     }
 
     private static XapiConfig config(int batch, int maxRetries) {
@@ -159,11 +250,16 @@ class XapiClientTest {
         clientField.set(xapiClient, client);
     }
 
-    @SuppressWarnings("unchecked")
-    private static List<Statement> buffer(XapiClient xapiClient) throws Exception {
+    private static List<?> buffer(XapiClient xapiClient) throws Exception {
         Field bufferField = XapiClient.class.getDeclaredField("buffer");
         bufferField.setAccessible(true);
-        return (List<Statement>) bufferField.get(xapiClient);
+        return (List<?>) bufferField.get(xapiClient);
+    }
+
+    private static List<?> deadLetterQueue(XapiClient xapiClient) throws Exception {
+        Field deadLetterQueueField = XapiClient.class.getDeclaredField("deadLetterQueue");
+        deadLetterQueueField.setAccessible(true);
+        return (List<?>) deadLetterQueueField.get(xapiClient);
     }
 
     private static int retryCount(XapiClient xapiClient) throws Exception {
@@ -172,9 +268,17 @@ class XapiClientTest {
         return (Integer) retryCountField.get(xapiClient);
     }
 
+    private static int currentBatchSize(XapiClient xapiClient) throws Exception {
+        Field currentBatchSizeField = XapiClient.class.getDeclaredField("currentBatchSize");
+        currentBatchSizeField.setAccessible(true);
+        return currentBatchSizeField.getInt(xapiClient);
+    }
+
     private static class FakeStatementClient extends StatementClient {
         private int failuresRemaining;
         private int postAttempts;
+        private int lastBatchSize;
+        private Integer statusCodeToThrow;
         private final List<Statement> postedStatements = new ArrayList<>();
 
         FakeStatementClient() {
@@ -184,9 +288,11 @@ class XapiClientTest {
         @Override
         public List<UUID> postStatements(List<Statement> statements) {
             postAttempts++;
+            lastBatchSize = statements.size();
+
             if (failuresRemaining > 0) {
                 failuresRemaining--;
-                throw new StatementClientException("Client error");
+                throw new StatementClientException("Client error", statusCodeToThrow != null ? statusCodeToThrow : 503);
             }
             postedStatements.addAll(statements);
             return statements.stream()
