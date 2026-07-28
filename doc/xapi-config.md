@@ -615,6 +615,14 @@ The buffer flush interval is controlled by the Java/Spring property `xapi.buffer
 java -Dxapi.buffer.clear-rate=5000 ...
 ```
 
+### Example LRS
+
+You can run an example LRS with the proper configuration for the default `xapi-config.json` by running the included docker-compose.
+
+```shell
+docker compose up lrs
+```
+
 ## Complete Example
 
 ```json
