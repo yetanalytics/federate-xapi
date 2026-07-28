@@ -25,6 +25,7 @@ import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.InjectionOpti
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.InlineInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.LookupInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.ParseResult;
+import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.PreviousInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.QueryInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.StatementInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.TriggerInjection;
@@ -76,6 +77,8 @@ public class TriggerProcessor {
             return null;
         }
         ObjectMapper mapper = new ObjectMapper();
+        StatementTrigger.Type previousTriggerType = context.getTriggerType();
+        context.setTriggerType(trigger.type);
         try {
             LazyLookupContext lookups = new LazyLookupContext(injectionHandler, context, trigger.lookups);
             if (evaluateCriteria
@@ -93,6 +96,8 @@ public class TriggerProcessor {
         } catch (Exception e) {
             logger.error("Could not process trigger {}.{}: {}", trigger.type, trigger.clazz, e.getMessage(), e);
             return TriggerProcessingResult.failed(e);
+        } finally {
+            context.setTriggerType(previousTriggerType);
         }
     }
 
@@ -216,6 +221,13 @@ public class TriggerProcessor {
                         injectionHandler.handleTrigger(triggerInjection.target(), context),
                         triggerInjection.options(),
                         injectionDescription(triggerInjection, null),
+                        embedded,
+                        mapper);
+            } else if (injection instanceof PreviousInjection previousInjection) {
+                return renderResolution(
+                        injectionHandler.handlePrevious(previousInjection.target(), context),
+                        previousInjection.options(),
+                        injectionDescription(previousInjection, null),
                         embedded,
                         mapper);
             } else if (injection instanceof QueryInjection queryInjection) {

@@ -195,6 +195,43 @@ public class ConfigParserTest {
     }
 
     @Test
+    public void parsesPreviousCriteriaOnlyForObjectUpdate(@TempDir Path tempDir) throws IOException {
+        Path validPath = tempDir.resolve("valid-previous.json");
+        Files.writeString(validPath, """
+                {
+                  "statementTriggers": [{
+                    "type": "ObjectUpdate",
+                    "class": "Rabbit",
+                    "criteria": [["previous", ["Hunger"]], "<", ["trigger", ["Hunger"]]],
+                    "statement": {}
+                  }]
+                }
+                """);
+
+        assertNotNull(ConfigParser.fromFile(validPath.toString()).parse()
+                .statementTriggers.get(0).criteria);
+
+        for (String type : List.of("Interaction", "ObjectCreate", "ObjectDelete")) {
+            Path invalidPath = tempDir.resolve(type + "-previous.json");
+            Files.writeString(invalidPath, """
+                    {
+                      "statementTriggers": [{
+                        "type": "%s",
+                        "class": "Rabbit",
+                        "criteria": [["previous", ["Hunger"]], "<", 10],
+                        "statement": {}
+                      }]
+                    }
+                    """.formatted(type));
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> ConfigParser.fromFile(invalidPath.toString()).parse(),
+                    type);
+        }
+    }
+
+    @Test
     public void rejectsBareEventTargetsInTriggerCriteria(@TempDir Path tempDir) throws IOException {
         Path configPath = tempDir.resolve("xapi-config.json");
         Files.writeString(configPath, """

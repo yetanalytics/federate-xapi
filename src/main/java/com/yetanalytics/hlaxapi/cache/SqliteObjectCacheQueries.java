@@ -162,7 +162,7 @@ final class SqliteObjectCacheQueries implements ObjectCacheQueries {
 
     @Override
     public String findObjectId() {
-        return "SELECT id FROM object_instance WHERE object_handle = ?";
+        return "SELECT id FROM object_instance WHERE object_handle = ? AND removed_at IS NULL";
     }
 
     @Override

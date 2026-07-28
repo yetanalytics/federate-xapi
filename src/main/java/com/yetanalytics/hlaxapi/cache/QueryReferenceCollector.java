@@ -7,6 +7,7 @@ import com.yetanalytics.hlaxapi.config.model.Expression;
 import com.yetanalytics.hlaxapi.config.model.ExpressionWalker;
 import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
 import com.yetanalytics.hlaxapi.config.model.LookupExpression;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.QueryExpression;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
@@ -16,6 +17,7 @@ import com.yetanalytics.hlaxapi.injection.StatementInjectionParser;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.InlineInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.LookupInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.ParseResult;
+import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.PreviousInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.QueryInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.StatementInjection;
 import java.io.IOException;
@@ -32,7 +34,8 @@ public final class QueryReferenceCollector {
     private record ReferenceState(
             Map<String, Set<String>> references,
             Map<String, String> lookupClasses,
-            String activeCacheClass) {
+            String activeCacheClass,
+            String previousClass) {
     }
 
     private static final ExpressionWalker.Visitor<ReferenceState> REFERENCE_VISITOR =
@@ -48,6 +51,8 @@ public final class QueryReferenceCollector {
                                 state.references,
                                 state.lookupClasses.get(lookup.alias),
                                 lookup.target);
+                        case PreviousExpression previous ->
+                            addTarget(state.references, state.previousClass, previous.target);
                         case QueryExpression query -> addTarget(state.references, query.clazz, query.target);
                         case Target target -> addTarget(state.references, state.activeCacheClass, target);
                         case TriggerExpression ignored -> {
@@ -66,7 +71,11 @@ public final class QueryReferenceCollector {
                         case QUERY_FILTER -> ((QueryExpression) parent).clazz;
                         case LEFT, RIGHT, OPERAND -> state.activeCacheClass;
                     };
-                    return new ReferenceState(state.references, state.lookupClasses, activeCacheClass);
+                    return new ReferenceState(
+                            state.references,
+                            state.lookupClasses,
+                            activeCacheClass,
+                            state.previousClass);
                 }
             };
 
@@ -83,12 +92,24 @@ public final class QueryReferenceCollector {
                 continue;
             }
             Map<String, String> lookupClasses = collectLookupDefinitions(trigger, references);
-            collectExpressionReferences(trigger.criteria, references, lookupClasses, null);
+            String previousClass = trigger.type == StatementTrigger.Type.OBJECT_UPDATE
+                    ? trigger.clazz
+                    : null;
+            collectExpressionReferences(
+                    trigger.criteria,
+                    references,
+                    lookupClasses,
+                    null,
+                    previousClass);
             if (trigger.statement == null) {
                 continue;
             }
             try {
-                collectFromNode(MAPPER.readTree(trigger.statement), references, lookupClasses);
+                collectFromNode(
+                        MAPPER.readTree(trigger.statement),
+                        references,
+                        lookupClasses,
+                        previousClass);
             } catch (IOException ignored) {
                 // Bad statement JSON is handled by TriggerProcessor at runtime.
             }
@@ -108,7 +129,12 @@ public final class QueryReferenceCollector {
                 return;
             }
             lookupClasses.put(alias, lookup.clazz);
-            collectExpressionReferences(lookup.criteria, references, lookupClasses, lookup.clazz);
+            collectExpressionReferences(
+                    lookup.criteria,
+                    references,
+                    lookupClasses,
+                    lookup.clazz,
+                    null);
         });
         return lookupClasses;
     }
@@ -117,41 +143,55 @@ public final class QueryReferenceCollector {
             Expression expression,
             Map<String, Set<String>> references,
             Map<String, String> lookupClasses,
-            String activeCacheClass) {
+            String activeCacheClass,
+            String previousClass) {
         ExpressionWalker.walk(
                 expression,
-                new ReferenceState(references, lookupClasses, activeCacheClass),
+                new ReferenceState(
+                        references,
+                        lookupClasses,
+                        activeCacheClass,
+                        previousClass),
                 REFERENCE_VISITOR);
     }
 
     private static void collectFromNode(
             JsonNode node,
             Map<String, Set<String>> references,
-            Map<String, String> lookupClasses) {
+            Map<String, String> lookupClasses,
+            String previousClass) {
         if (node == null || node.isNull()) {
             return;
         }
         if (node.isObject()) {
             for (JsonNode child : node) {
-                collectFromNode(child, references, lookupClasses);
+                collectFromNode(child, references, lookupClasses, previousClass);
             }
             return;
         }
         if (node.isArray()) {
             ParseResult parsed = StatementInjectionParser.parse(node);
             if (parsed.valid()) {
-                collectInjection(parsed.injection(), references, lookupClasses);
+                collectInjection(
+                        parsed.injection(),
+                        references,
+                        lookupClasses,
+                        previousClass);
                 return;
             }
             for (JsonNode child : node) {
-                collectFromNode(child, references, lookupClasses);
+                collectFromNode(child, references, lookupClasses, previousClass);
             }
             return;
         }
         if (node.isTextual()) {
             for (InlineInjection inline : StatementInjectionParser.findInline(node.asText())) {
                 if (inline.result().valid()) {
-                    collectInjection(inline.result().injection(), references, lookupClasses);
+                    collectInjection(
+                            inline.result().injection(),
+                            references,
+                            lookupClasses,
+                            previousClass);
                 }
             }
         }
@@ -160,11 +200,14 @@ public final class QueryReferenceCollector {
     private static void collectInjection(
             StatementInjection injection,
             Map<String, Set<String>> references,
-            Map<String, String> lookupClasses) {
+            Map<String, String> lookupClasses,
+            String previousClass) {
         if (injection instanceof QueryInjection queryInjection) {
             collectQuery(queryInjection, references);
         } else if (injection instanceof LookupInjection lookupInjection) {
             collectLookup(lookupInjection, references, lookupClasses);
+        } else if (injection instanceof PreviousInjection previousInjection) {
+            addTarget(references, previousClass, previousInjection.target());
         }
     }
 
@@ -182,7 +225,7 @@ public final class QueryReferenceCollector {
         }
 
         addTarget(references, className, target);
-        collectExpressionReferences(criteria, references, Map.of(), className);
+        collectExpressionReferences(criteria, references, Map.of(), className, null);
     }
 
     private static void collectLookup(

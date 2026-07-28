@@ -18,8 +18,11 @@ import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.ComparisonOperator;
 import com.yetanalytics.hlaxapi.config.model.Criterion;
 import com.yetanalytics.hlaxapi.config.model.LrsConfig;
+import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
+import com.yetanalytics.hlaxapi.config.model.LogicalOperator;
 import com.yetanalytics.hlaxapi.config.model.ObjectCacheConfig;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TrackedObject;
@@ -580,6 +583,173 @@ class HlaObjectSubscriptionTest {
             assertEquals(19, hungerAtEnqueue.get());
             assertEquals(
                     List.of("{\"incoming\":19,\"queried\":5,\"lookedUp\":5}"),
+                    xapiClient.statements);
+        }
+    }
+
+    @Test
+    void previousCriteriaDetectChangesAndThresholdCrossings(@TempDir Path tempDir) throws Exception {
+        StatementTrigger changed = objectUpdateTrigger(
+                "Rabbit",
+                """
+                {"event":"changed","old":["previous",["Hunger"]],"new":["trigger",["Hunger"]]}
+                """);
+        changed.criteria = new Criterion(
+                new PreviousExpression(new Target(List.of("Hunger"))),
+                ComparisonOperator.NEQ,
+                new TriggerExpression(new Target(List.of("Hunger"))));
+        StatementTrigger crossed = objectUpdateTrigger(
+                "Rabbit",
+                """
+                {"event":"crossed","old":["previous",["Hunger"]],"new":["trigger",["Hunger"]]}
+                """);
+        crossed.criteria = new LogicalExpression(
+                LogicalOperator.AND,
+                List.of(
+                        new Criterion(
+                                new PreviousExpression(new Target(List.of("Hunger"))),
+                                ComparisonOperator.LT,
+                                new ValueExpression(20)),
+                        new Criterion(
+                                new TriggerExpression(new Target(List.of("Hunger"))),
+                                ComparisonOperator.GTE,
+                                new ValueExpression(20))));
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(changed, crossed);
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("previous-crossing.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(106);
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+            cache.reflectAttributeValue(
+                    rabbit.toString(),
+                    "Rabbit",
+                    "Hunger",
+                    HLAEncodingTestSupport.int32(10, ByteOrder.BIG_ENDIAN));
+
+            reflect(hlaInterface, rabbit, hunger, 10);
+            reflect(hlaInterface, rabbit, hunger, 21);
+            reflect(hlaInterface, rabbit, hunger, 22);
+
+            assertEquals(
+                    List.of(
+                            "{\"event\":\"changed\",\"old\":10,\"new\":21}",
+                            "{\"event\":\"crossed\",\"old\":10,\"new\":21}",
+                            "{\"event\":\"changed\",\"old\":21,\"new\":22}"),
+                    xapiClient.statements);
+        }
+    }
+
+    @Test
+    @SuppressTestLogging({
+        "com.yetanalytics.hlaxapi.TriggerProcessor",
+        "com.yetanalytics.hlaxapi.StatementTriggerDispatcher"
+    })
+    void firstObservationSupportsOptionalPreviousWithoutRetryingRequiredInjections(
+            @TempDir Path tempDir) throws Exception {
+        StatementTrigger required = objectUpdateTrigger(
+                "Rabbit",
+                """
+                {"event":"required","old":["previous",["Hunger"]],"new":["trigger",["Hunger"]]}
+                """);
+        StatementTrigger optional = objectUpdateTrigger(
+                "Rabbit",
+                """
+                {
+                  "event":"optional",
+                  "old":["previous",["Hunger"],{"required":false}],
+                  "new":["trigger",["Hunger"]]
+                }
+                """);
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(required, optional);
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("previous-first-observation.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(107);
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Previous");
+
+            reflect(hlaInterface, rabbit, hunger, 5);
+            reflect(hlaInterface, rabbit, hunger, 6);
+
+            assertEquals(
+                    List.of(
+                            "{\"event\":\"optional\",\"old\":null,\"new\":5}",
+                            "{\"event\":\"required\",\"old\":5,\"new\":6}",
+                            "{\"event\":\"optional\",\"old\":5,\"new\":6}"),
+                    xapiClient.statements);
+        }
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
+    void failedReflectionRetainsOnePreviousStateForEveryTrigger(@TempDir Path tempDir) throws Exception {
+        StatementTrigger first = objectUpdateTrigger(
+                "Rabbit",
+                """
+                {"trigger":1,"old":["previous",["Hunger"]],"new":["trigger",["Hunger"]]}
+                """);
+        StatementTrigger second = objectUpdateTrigger(
+                "Rabbit",
+                """
+                {"trigger":2,"old":["previous",["Hunger"]],"new":["trigger",["Hunger"]]}
+                """);
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(first, second);
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("previous-rollback.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(108);
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+            AttributeHandle unknown = rti.attributeHandle(rabbitClass, "NotInTheFom");
+            cache.reflectAttributeValue(
+                    rabbit.toString(),
+                    "Rabbit",
+                    "Hunger",
+                    HLAEncodingTestSupport.int32(5, ByteOrder.BIG_ENDIAN));
+            AttributeHandleValueMap failedReflection = new HLA1516eAttributeHandleValueMap();
+            failedReflection.put(hunger, HLAEncodingTestSupport.int32(20, ByteOrder.BIG_ENDIAN));
+            failedReflection.put(unknown, HLAEncodingTestSupport.int32(1, ByteOrder.BIG_ENDIAN));
+
+            hlaInterface.reflectAttributeValues(rabbit, failedReflection, null, null, null, null);
+
+            assertEquals(5, cache.findCurrentValue(rabbit.toString(), "Hunger").orElseThrow().value());
+            assertTrue(xapiClient.statements.isEmpty());
+
+            reflect(hlaInterface, rabbit, hunger, 30);
+
+            assertEquals(
+                    List.of(
+                            "{\"trigger\":1,\"old\":5,\"new\":30}",
+                            "{\"trigger\":2,\"old\":5,\"new\":30}"),
                     xapiClient.statements);
         }
     }

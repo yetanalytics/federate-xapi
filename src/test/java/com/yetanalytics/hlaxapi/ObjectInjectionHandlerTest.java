@@ -121,6 +121,29 @@ class ObjectInjectionHandlerTest {
         assertTrue(result.statement().contains("\"raw\":0.5"));
     }
 
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
+    void validatesPreviousOnlyForObjectUpdateTemplates() {
+        TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
+        for (StatementTrigger.Type type : List.of(
+                StatementTrigger.Type.OBJECT_UPDATE,
+                StatementTrigger.Type.INTERACTION,
+                StatementTrigger.Type.OBJECT_CREATE,
+                StatementTrigger.Type.OBJECT_DELETE)) {
+            StatementTrigger trigger = trigger("""
+                    {"oldCount":["previous",["Count"]]}
+                    """);
+            trigger.type = type;
+
+            TriggerProcessor.TriggerProcessingResult result =
+                    processor.renderTemplateForValidation(
+                            trigger,
+                            new TestInjectionContext(type, "TrackedEntity"));
+
+            assertEquals(type == StatementTrigger.Type.OBJECT_UPDATE, result.success(), type.toString());
+        }
+    }
+
     private InjectionHandler handler(String fomPath) {
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
         FOMXML fomXml = new FOMXML(

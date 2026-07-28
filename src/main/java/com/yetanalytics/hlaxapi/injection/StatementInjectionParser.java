@@ -44,6 +44,11 @@ public final class StatementInjectionParser {
                         : ParseResult.valid(new TriggerInjection(
                                 CriteriaExpressionParser.parseTarget(node.get(1)),
                                 options(node, 2)));
+                case PREVIOUS -> node.size() < 2
+                        ? ParseResult.malformed(type)
+                        : ParseResult.valid(new PreviousInjection(
+                                CriteriaExpressionParser.parseTarget(node.get(1)),
+                                options(node, 2)));
                 case QUERY -> node.size() < 4
                         ? ParseResult.malformed(type)
                         : ParseResult.valid(new QueryInjection(
@@ -108,7 +113,7 @@ public final class StatementInjectionParser {
     }
 
     public sealed interface StatementInjection
-            permits TriggerInjection, QueryInjection, LookupInjection {
+            permits TriggerInjection, PreviousInjection, QueryInjection, LookupInjection {
 
         InjectionType type();
 
@@ -122,6 +127,14 @@ public final class StatementInjectionParser {
         @Override
         public InjectionType type() {
             return InjectionType.TRIGGER;
+        }
+    }
+
+    public record PreviousInjection(Target target, InjectionOptions options) implements StatementInjection {
+
+        @Override
+        public InjectionType type() {
+            return InjectionType.PREVIOUS;
         }
     }
 

@@ -26,6 +26,7 @@ import com.yetanalytics.hlaxapi.config.model.TrackedObject;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
 import hla.rti1516e.encoding.DataElement;
 import hla.rti1516e.encoding.EncoderException;
 import hla.rti1516e.encoding.EncoderFactory;
@@ -479,6 +480,74 @@ abstract class ObjectCachePersistenceTest {
 
             assertTrue(result.success());
             assertEquals("{\"predator\":\"Alice\"}", result.statement());
+        }
+    }
+
+    @Test
+    void previousResolutionSupportsNestedArraysCachedNullAndMissingValues() throws Exception {
+        try (ObjectCache cache = newCache(
+                "previous-resolution",
+                enabledConfig(),
+                dynamicArrayCatalog,
+                dynamicArrayFomXml)) {
+            cache.reflectAttributeValues(
+                    "rabbit-1",
+                    "Rabbit",
+                    Map.of(
+                            "Position", position(12, 8),
+                            "PositionHistory", positionHistory(position(1, 2), position(3, 4)),
+                            "Hunger", new byte[] {1}));
+            InjectionHandler injectionHandler = new InjectionHandler();
+            injectionHandler.setFomXml(dynamicArrayFomXml);
+            injectionHandler.setHLADecoderRegistry(decoderRegistry);
+            injectionHandler.setFomCatalog(dynamicArrayCatalog);
+            setField(injectionHandler, "objectCache", cache);
+            ObjectInjectionContext context =
+                    new ObjectInjectionContext("Rabbit", "rabbit-1", Map.of());
+            context.setTriggerType(StatementTrigger.Type.OBJECT_UPDATE);
+
+            ValueResolution nested = injectionHandler.handlePrevious(
+                    new Target(List.of("Position", "X")),
+                    context);
+            ValueResolution array = injectionHandler.handlePrevious(
+                    new Target(List.of("PositionHistory", 1, "Y")),
+                    context);
+            ValueResolution cachedNull = injectionHandler.handlePrevious(
+                    new Target(List.of("Hunger")),
+                    context);
+            ValueResolution missing = injectionHandler.handlePrevious(
+                    new Target(List.of("EntityId")),
+                    context);
+
+            assertEquals(ValueResolution.Status.PRESENT, nested.status());
+            assertEquals(12, nested.value());
+            assertEquals(ValueResolution.Status.PRESENT, array.status());
+            assertEquals(4, array.value());
+            assertEquals(ValueResolution.Status.PRESENT, cachedNull.status());
+            assertNull(cachedNull.value());
+            assertEquals(ValueResolution.Status.MISSING_VALUE, missing.status());
+
+            StatementTrigger nullablePrevious = new StatementTrigger();
+            nullablePrevious.type = StatementTrigger.Type.OBJECT_UPDATE;
+            nullablePrevious.clazz = "Rabbit";
+            nullablePrevious.statement =
+                    "{\"oldHunger\":[\"previous\",[\"Hunger\"],{\"nullable\":true}]}";
+            TriggerProcessor.TriggerProcessingResult rendered =
+                    new TriggerProcessor(injectionHandler).processTrigger(
+                            nullablePrevious,
+                            context);
+
+            assertTrue(rendered.success());
+            assertEquals("{\"oldHunger\":null}", rendered.statement());
+
+            cache.removeObject("rabbit-1");
+
+            assertEquals(
+                    ValueResolution.Status.MISSING_VALUE,
+                    injectionHandler.handlePrevious(
+                                    new Target(List.of("Position", "X")),
+                                    context)
+                            .status());
         }
     }
 

@@ -124,6 +124,19 @@ class ExpressionWalkerTest {
                 () -> ExpressionWalker.rewrite(new ValueExpression(true), ignored -> null));
     }
 
+    @Test
+    void treatsPreviousAsAValueSourceWithoutWalkingItsTarget() {
+        Target target = target("Hunger");
+        PreviousExpression previous = new PreviousExpression(target);
+        List<Expression> visited = new ArrayList<>();
+
+        ExpressionWalker.walk(previous, visited::add);
+
+        assertEquals(List.of(previous), visited);
+        assertFalse(visited.contains(target));
+        assertSame(previous, ExpressionWalker.rewrite(previous, UnaryOperator.identity()));
+    }
+
     private static Fixture fixture() {
         Target triggerTarget = target("Score");
         TriggerExpression trigger = new TriggerExpression(triggerTarget);

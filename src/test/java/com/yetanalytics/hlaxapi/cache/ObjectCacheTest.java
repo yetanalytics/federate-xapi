@@ -90,6 +90,34 @@ class ObjectCacheTest {
     }
 
     @Test
+    void objectUpdatePreviousReferencesEnableOnlyTheirCacheAttributes(@TempDir Path tempDir) {
+        StatementTrigger trigger = objectUpdateTrigger("Rabbit");
+        trigger.statement = """
+                {
+                  "oldHunger":["previous",["Hunger"]],
+                  "oldX":"<<[\\"previous\\",[\\"Position\\",\\"X\\"]]>>"
+                }
+                """;
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(trigger);
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("object-update-previous.sqlite"))) {
+            Set<String> rabbitAttributes =
+                    Set.copyOf(catalog.objectClass("Rabbit").orElseThrow().topLevelAttributeNames());
+
+            assertTrue(cache.isEnabled());
+            assertEquals(Set.of("Hunger", "Position"), cache.cacheSubscriptions().get("Rabbit"));
+            assertEquals(rabbitAttributes, cache.eventSubscriptions().get("Rabbit"));
+            assertEquals(rabbitAttributes, cache.subscriptions().get("Rabbit"));
+        }
+    }
+
+    @Test
     void objectCreateSubscriptionsDoNotEnableCacheAndIncludeInheritedAttributes(@TempDir Path tempDir) {
         Path databasePath = tempDir.resolve("object-create-only.sqlite");
         XapiConfig config = new XapiConfig();

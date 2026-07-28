@@ -19,6 +19,7 @@ import com.yetanalytics.hlaxapi.cache.ValueResolution;
 import com.yetanalytics.hlaxapi.config.model.Expression;
 import com.yetanalytics.hlaxapi.config.model.ExpressionWalker;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
@@ -295,6 +296,27 @@ public class InjectionHandler {
                 context.getHlaClass(),
                 context.getAttributeMap(),
                 true);
+    }
+
+    public ValueResolution handlePrevious(Target target, InjectionContext context) {
+        if (context == null
+                || context.getTriggerType() != StatementTrigger.Type.OBJECT_UPDATE) {
+            throw new IllegalArgumentException(
+                    "previous values are only available to ObjectUpdate triggers");
+        }
+        if (context instanceof TestInjectionContext testContext) {
+            return handleTrigger(target, testContext);
+        }
+        if (!(context instanceof ObjectInjectionContext objectContext)) {
+            throw new IllegalArgumentException(
+                    "previous values require an object update context");
+        }
+        if (objectCache == null) {
+            return ValueResolution.missingObject();
+        }
+        return objectCache.findCurrentValueResolution(
+                objectContext.getObjectHandle(),
+                target);
     }
 
     public ValueResolution handleQuery(

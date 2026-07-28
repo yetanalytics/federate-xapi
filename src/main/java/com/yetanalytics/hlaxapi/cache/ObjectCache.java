@@ -208,6 +208,21 @@ public class ObjectCache implements AutoCloseable {
         return store.findCurrentValue(objectHandle, pathKey);
     }
 
+    public synchronized ValueResolution findCurrentValueResolution(
+            String objectHandle,
+            Target target) {
+        if (!isEnabled()) {
+            return ValueResolution.missingObject();
+        }
+        String pathKey = FomCatalog.targetPath(target == null ? null : target.parts);
+        if (pathKey == null) {
+            return ValueResolution.missingValue();
+        }
+        return store.findCurrentValue(objectHandle, pathKey)
+                .map(value -> ValueResolution.present(value.value()))
+                .orElseGet(ValueResolution::missingValue);
+    }
+
     public synchronized List<CachedObject> currentObjects(String className) {
         if (!isEnabled()) {
             return List.of();

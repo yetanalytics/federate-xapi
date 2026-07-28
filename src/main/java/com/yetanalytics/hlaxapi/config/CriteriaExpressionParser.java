@@ -9,6 +9,7 @@ import com.yetanalytics.hlaxapi.config.model.InjectionType;
 import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
 import com.yetanalytics.hlaxapi.config.model.LogicalOperator;
 import com.yetanalytics.hlaxapi.config.model.LookupExpression;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.QueryExpression;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
@@ -61,6 +62,10 @@ public final class CriteriaExpressionParser {
             case TRIGGER -> {
                 requireArity(node, 2, type);
                 yield new TriggerExpression(parseTarget(node.get(1)));
+            }
+            case PREVIOUS -> {
+                requireArity(node, 2, type);
+                yield new PreviousExpression(parseTarget(node.get(1)));
             }
             case QUERY -> {
                 requireArity(node, 4, type);
