@@ -67,10 +67,8 @@
                 "context": {
                     "extensions": {
                         "https://hla-federepl.example/extensions/previous-step-number": [
-                            "query",
-                            "World",
+                            "previous",
                             ["StepNumber"],
-                            null,
                             {"required": false}
                         ],
                         "https://hla-federepl.example/extensions/current-step-number": [
