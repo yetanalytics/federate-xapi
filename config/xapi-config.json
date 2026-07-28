@@ -202,8 +202,8 @@
     ],
     "lrs": {
         "host": "http://localhost:8080/xapi",
-        "key": "username",
-        "secret": "password",
+        "key": "my_key",
+        "secret": "my_secret",
         "batch": 35,
         "maxRetries": 3
     }
