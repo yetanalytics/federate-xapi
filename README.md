@@ -1,6 +1,6 @@
 ## HLA xAPI Adapter Federate
 
-An HLA federate capable of converting HLA RTI events (interactions and object updates) into xAPI Statements and storing them in a Learning Record Store.
+An HLA federate capable of converting HLA RTI interactions and object lifecycle events into xAPI Statements and storing them in a Learning Record Store.
 
 ### Configuration
 
