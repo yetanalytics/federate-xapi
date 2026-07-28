@@ -10,7 +10,6 @@ import java.util.Objects;
 import java.util.function.Consumer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -21,7 +20,6 @@ public class StatementTriggerDispatcher {
     private final XapiConfig xapiConfig;
     private final TriggerProcessor triggerProcessor;
 
-    @Autowired
     public StatementTriggerDispatcher(XapiConfig xapiConfig, TriggerProcessor triggerProcessor) {
         this.xapiConfig = xapiConfig;
         this.triggerProcessor = triggerProcessor;
