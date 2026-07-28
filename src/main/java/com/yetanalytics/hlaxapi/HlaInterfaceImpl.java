@@ -275,8 +275,9 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             logger.error("Error resolving discovered object {}", objectName, e);
             return;
         }
-        Set<String> subscribedAttributes = objectCache.subscriptions().get(className);
-        if (subscribedAttributes == null || subscribedAttributes.isEmpty()) {
+        Set<String> subscribedAttributes =
+                objectCache.effectiveSubscriptionAttributes(className);
+        if (subscribedAttributes.isEmpty()) {
             return;
         }
         if (hasObjectCreateTrigger(className)) {

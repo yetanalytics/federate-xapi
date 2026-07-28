@@ -861,6 +861,41 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    void discoveryRequestsTheUnionOfChildAndAncestorSubscriptions(@TempDir Path tempDir) throws Exception {
+        StatementTrigger simEntityQuery = new StatementTrigger();
+        simEntityQuery.statement = """
+                {"name":["query","SimEntity",["FirstName"],null]}
+                """;
+        TrackedObject trackedRabbit = new TrackedObject();
+        trackedRabbit.clazz = "Rabbit";
+        trackedRabbit.attributes = List.of("Hunger");
+        ObjectCacheConfig objectCacheConfig = new ObjectCacheConfig();
+        objectCacheConfig.trackedObjects = List.of(trackedRabbit);
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(simEntityQuery);
+        config.objectCacheConfig = objectCacheConfig;
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("inherited-discovery.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, new RecordingXapiClient());
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(107);
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Inherited");
+
+            assertEquals(Set.of("FirstName"), cache.subscriptions().get("SimEntity"));
+            assertEquals(Set.of("Hunger"), cache.subscriptions().get("Rabbit"));
+            assertEquals(Set.of("FirstName", "Hunger"), rti.requests.get(0).attributes());
+        }
+    }
+
+    @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void unknownObjectUpdateClassIsSkippedDuringSubscription() throws Exception {
         XapiConfig config = new XapiConfig();
