@@ -148,6 +148,50 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    void emptyReflectionDoesNotDispatchCacheOrConsumePendingCreate() throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        "Rabbit",
+                        "{\"event\":\"create\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        "Rabbit",
+                        "{\"event\":\"update\"}"));
+
+        try (RecordingReflectionCache cache =
+                new RecordingReflectionCache(config, catalog, fomXml, decoderRegistry)) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient);
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(106);
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Empty");
+            hlaInterface.reflectAttributeValues(
+                    rabbit,
+                    new HLA1516eAttributeHandleValueMap(),
+                    null,
+                    null,
+                    null,
+                    null);
+
+            assertTrue(xapiClient.statements.isEmpty());
+            assertEquals(0, cache.reflectionCalls);
+
+            reflect(hlaInterface, rabbit, hunger, 12);
+
+            assertEquals(1, cache.reflectionCalls);
+            assertEquals(
+                    List.of("{\"event\":\"create\"}", "{\"event\":\"update\"}"),
+                    xapiClient.statements);
+        }
+    }
+
+    @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void failedCacheProcessingRetainsPendingCreateForTheNextReflection() throws Exception {
         XapiConfig config = new XapiConfig();
@@ -976,6 +1020,28 @@ class HlaObjectSubscriptionTest {
                 failNextReflection = false;
                 throw new IllegalStateException("injected reflection failure");
             }
+            super.reflectAttributeValues(objectHandle, className, attributes);
+        }
+    }
+
+    private static final class RecordingReflectionCache extends ObjectCache {
+
+        private int reflectionCalls;
+
+        private RecordingReflectionCache(
+                XapiConfig config,
+                FomCatalog catalog,
+                FOMXML fomXml,
+                HLADecoderRegistry decoderRegistry) {
+            super(config, catalog, fomXml, decoderRegistry);
+        }
+
+        @Override
+        public synchronized void reflectAttributeValues(
+                String objectHandle,
+                String className,
+                Map<String, byte[]> attributes) {
+            reflectionCalls++;
             super.reflectAttributeValues(objectHandle, className, attributes);
         }
     }

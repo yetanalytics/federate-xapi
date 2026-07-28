@@ -374,6 +374,10 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 String attributeName = ambassador.getAttributeName(classHandle, attributeHandle);
                 attributes.put(attributeName, theAttributes.get(attributeHandle));
             }
+            if (attributes.isEmpty()) {
+                logger.debug("Ignoring empty reflection for object {}", theObject);
+                return;
+            }
             ObjectInjectionContext context =
                     new ObjectInjectionContext(className, theObject.toString(), attributes);
             boolean createPending = className.equals(pendingObjectCreates.get(theObject.toString()));
