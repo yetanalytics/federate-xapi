@@ -9,7 +9,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -46,6 +48,34 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
             return loadObject(objectHandle, clazz.localName());
         } catch (SQLException e) {
             throw new IllegalStateException("Could not upsert object instance " + objectHandle, e);
+        }
+    }
+
+    @Override
+    public Optional<ObjectSnapshot> findCurrentObjectSnapshot(String objectHandle) {
+        try (PreparedStatement statement = connection.prepareStatement(queries.loadCurrentObjectSnapshot())) {
+            statement.setString(1, objectHandle);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                String objectName = null;
+                String className = null;
+                Map<String, byte[]> attributes = new LinkedHashMap<>();
+                boolean found = false;
+                while (resultSet.next()) {
+                    found = true;
+                    objectName = resultSet.getString("object_name");
+                    className = resultSet.getString("local_name");
+                    String attributeName = resultSet.getString("attribute_name");
+                    byte[] rawBytes = resultSet.getBytes("raw_bytes");
+                    if (attributeName != null && rawBytes != null) {
+                        attributes.put(attributeName, rawBytes);
+                    }
+                }
+                return found
+                        ? Optional.of(new ObjectSnapshot(objectHandle, objectName, className, attributes))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not load current object snapshot: " + objectHandle, e);
         }
     }
 

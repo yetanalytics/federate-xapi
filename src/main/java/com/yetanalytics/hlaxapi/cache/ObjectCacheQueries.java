@@ -24,6 +24,8 @@ interface ObjectCacheQueries {
 
     String loadObject();
 
+    String loadCurrentObjectSnapshot();
+
     String removeObject();
 
     String findCurrentValue();

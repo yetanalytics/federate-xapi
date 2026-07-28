@@ -32,6 +32,7 @@ import hla.rti1516e.AttributeHandleValueMap;
 import hla.rti1516e.ObjectClassHandle;
 import hla.rti1516e.ObjectInstanceHandle;
 import hla.rti1516e.RTIambassador;
+import hla.rti1516e.exceptions.ObjectInstanceNotKnown;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -96,6 +97,359 @@ class HlaObjectSubscriptionTest {
             assertEquals(1, rti.attributeNameResolutions);
             assertTrue(cache.currentObjects("Rabbit").isEmpty());
             assertEquals(List.of("{}"), xapiClient.statements);
+        }
+    }
+
+    @Test
+    void firstReflectionDispatchesObjectCreateAndObjectUpdateThenOnlyUpdates() throws Exception {
+        StatementTrigger create = objectTrigger(
+                StatementTrigger.Type.OBJECT_CREATE,
+                "Rabbit",
+                """
+                {"event":"create","hunger":["trigger",["Hunger"]]}
+                """);
+        StatementTrigger update = objectTrigger(
+                StatementTrigger.Type.OBJECT_UPDATE,
+                "Rabbit",
+                """
+                {"event":"update","hunger":["trigger",["Hunger"]]}
+                """);
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(create, update);
+
+        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface = hlaInterface(
+                    cache,
+                    rti.proxy(),
+                    config,
+                    xapiClient,
+                    injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(96);
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Create");
+            reflect(hlaInterface, rabbit, hunger, 12);
+            reflect(hlaInterface, rabbit, hunger, 13);
+
+            assertFalse(cache.isEnabled());
+            assertEquals(
+                    List.of(
+                            "{\"event\":\"create\",\"hunger\":12}",
+                            "{\"event\":\"update\",\"hunger\":12}",
+                            "{\"event\":\"update\",\"hunger\":13}"),
+                    xapiClient.statements);
+        }
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
+    void failedCacheProcessingRetainsPendingCreateForTheNextReflection() throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(objectTrigger(
+                StatementTrigger.Type.OBJECT_CREATE,
+                "Rabbit",
+                """
+                {"hunger":["trigger",["Hunger"]]}
+                """));
+
+        try (ObjectCache cache =
+                new FailOnceReflectionCache(config, catalog, fomXml, decoderRegistry)) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface = hlaInterface(
+                    cache,
+                    rti.proxy(),
+                    config,
+                    xapiClient,
+                    injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(97);
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Retry");
+            reflect(hlaInterface, rabbit, hunger, 12);
+            reflect(hlaInterface, rabbit, hunger, 13);
+            reflect(hlaInterface, rabbit, hunger, 14);
+
+            assertEquals(List.of("{\"hunger\":13}"), xapiClient.statements);
+        }
+    }
+
+    @Test
+    void deletionBeforeFirstReflectionClearsPendingCreate() throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers =
+                List.of(objectTrigger(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", "{}"));
+
+        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(98);
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Gone");
+            hlaInterface.removeObjectInstance(rabbit, null, null, null);
+            reflect(hlaInterface, rabbit, hunger, 12);
+
+            assertTrue(xapiClient.statements.isEmpty());
+        }
+    }
+
+    @Test
+    @SuppressTestLogging({
+        "com.yetanalytics.hlaxapi.TriggerProcessor",
+        "com.yetanalytics.hlaxapi.StatementTriggerDispatcher"
+    })
+    void firstReflectionConsumesCreateEvenWhenRequiredValuesAreMissing() throws Exception {
+        StatementTrigger required = objectTrigger(
+                StatementTrigger.Type.OBJECT_CREATE,
+                "Rabbit",
+                "{\"entityId\":[\"trigger\",[\"EntityId\"]]}");
+        StatementTrigger optional = objectTrigger(
+                StatementTrigger.Type.OBJECT_CREATE,
+                "Rabbit",
+                "{\"entityId\":[\"trigger\",[\"EntityId\"],{\"required\":false}]}");
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(required, optional);
+
+        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(105);
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Partial");
+            reflect(hlaInterface, rabbit, rti.attributeHandle(rabbitClass, "Hunger"), 12);
+            AttributeHandleValueMap secondReflection = new HLA1516eAttributeHandleValueMap();
+            secondReflection.put(
+                    rti.attributeHandle(rabbitClass, "EntityId"),
+                    HLAEncodingTestSupport.asciiString("rabbit-partial"));
+            hlaInterface.reflectAttributeValues(rabbit, secondReflection, null, null, null, null);
+
+            assertEquals(List.of("{\"entityId\":null}"), xapiClient.statements);
+        }
+    }
+
+    @Test
+    void objectDeleteUsesFinalSnapshotAndEnqueuesAfterRemoval(@TempDir Path tempDir) throws Exception {
+        StatementTrigger delete = objectTrigger(
+                StatementTrigger.Type.OBJECT_DELETE,
+                "Rabbit",
+                """
+                {
+                  "entityId":["trigger",["EntityId"]],
+                  "hunger":["trigger",["Hunger"]],
+                  "x":["trigger",["Position","X"]],
+                  "queried":["query","Rabbit",["Hunger"],null],
+                  "lookedUp":["lookup","rabbit",["Hunger"]]
+                }
+                """);
+        delete.criteria = comparison("Hunger", ComparisonOperator.GT, 10);
+        ObjectLookup lookup = new ObjectLookup();
+        lookup.clazz = "Rabbit";
+        lookup.criteria = new Criterion(
+                new Target(List.of("EntityId")),
+                ComparisonOperator.EQ,
+                new ValueExpression("rabbit-delete"));
+        delete.lookups = Map.of("rabbit", lookup);
+        StatementTrigger skipped = objectTrigger(
+                StatementTrigger.Type.OBJECT_DELETE,
+                "Rabbit",
+                "{\"skipped\":true}");
+        skipped.criteria = comparison("Hunger", ComparisonOperator.GT, 20);
+        StatementTrigger wrongClass = objectTrigger(
+                StatementTrigger.Type.OBJECT_DELETE,
+                "Wolf",
+                "{\"wrongClass\":true}");
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(delete, skipped, wrongClass);
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("object-delete-dispatch.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(99);
+            AtomicReference<Boolean> removedAtEnqueue = new AtomicReference<>(false);
+            RecordingXapiClient xapiClient = new RecordingXapiClient(statement ->
+                    removedAtEnqueue.set(cache.currentObjects("Rabbit").isEmpty()));
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Delete");
+            AttributeHandleValueMap reflection = new HLA1516eAttributeHandleValueMap();
+            reflection.put(
+                    rti.attributeHandle(rabbitClass, "EntityId"),
+                    HLAEncodingTestSupport.asciiString("rabbit-delete"));
+            reflection.put(
+                    rti.attributeHandle(rabbitClass, "Hunger"),
+                    HLAEncodingTestSupport.int32(17, ByteOrder.BIG_ENDIAN));
+            reflection.put(
+                    rti.attributeHandle(rabbitClass, "Position"),
+                    HLAEncodingTestSupport.fixedRecord(
+                            HLAEncodingTestSupport.int32(4, ByteOrder.BIG_ENDIAN),
+                            HLAEncodingTestSupport.int32(7, ByteOrder.BIG_ENDIAN)));
+            hlaInterface.reflectAttributeValues(rabbit, reflection, null, null, null, null);
+
+            hlaInterface.removeObjectInstance(rabbit, null, null, null);
+            hlaInterface.removeObjectInstance(rabbit, null, null, null);
+
+            assertTrue(removedAtEnqueue.get());
+            assertEquals(
+                    List.of(
+                            "{\"entityId\":\"rabbit-delete\",\"hunger\":17,\"x\":4,"
+                                    + "\"queried\":17,\"lookedUp\":17}"),
+                    xapiClient.statements);
+            assertTrue(cache.findCurrentObjectSnapshot(rabbit.toString()).isEmpty());
+        }
+    }
+
+    @Test
+    @SuppressTestLogging({
+        "com.yetanalytics.hlaxapi.HlaInterfaceImpl",
+        "com.yetanalytics.hlaxapi.TriggerProcessor",
+        "com.yetanalytics.hlaxapi.StatementTriggerDispatcher"
+    })
+    void discoveryRemovalRaceStillDispatchesStaticAndOptionalDeletes(@TempDir Path tempDir) throws Exception {
+        StatementTrigger staticDelete =
+                objectTrigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", "{\"deleted\":true}");
+        StatementTrigger requiredMissing = objectTrigger(
+                StatementTrigger.Type.OBJECT_DELETE,
+                "Rabbit",
+                "{\"entityId\":[\"trigger\",[\"EntityId\"]]}");
+        StatementTrigger optionalMissing = objectTrigger(
+                StatementTrigger.Type.OBJECT_DELETE,
+                "Rabbit",
+                "{\"entityId\":[\"trigger\",[\"EntityId\"],{\"required\":false}]}");
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(staticDelete, requiredMissing, optionalMissing);
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("object-delete-race.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            rti.failAttributeRequestsForUnknownObjects = true;
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(100);
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Brief");
+            hlaInterface.removeObjectInstance(rabbit, null, null, null);
+
+            assertEquals(
+                    List.of("{\"deleted\":true}", "{\"entityId\":null}"),
+                    xapiClient.statements);
+            assertTrue(cache.currentObjects("Rabbit").isEmpty());
+        }
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
+    void removalFailureSuppressesStagedDeleteStatements(@TempDir Path tempDir) throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers =
+                List.of(objectTrigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", "{}"));
+
+        try (ObjectCache cache = new FailingRemovalCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("object-delete-failure.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(101);
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Failure");
+
+            hlaInterface.removeObjectInstance(rabbit, null, null, null);
+
+            assertTrue(xapiClient.statements.isEmpty());
+            assertEquals(1, cache.currentObjects("Rabbit").size());
+        }
+    }
+
+    @Test
+    void everyLifecycleCallbackOverloadUsesTheCommonPipelines(@TempDir Path tempDir) throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                objectTrigger(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", "{\"event\":\"create\"}"),
+                objectTrigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", "{\"event\":\"delete\"}"));
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("lifecycle-overloads.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient, injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            AttributeHandle hunger = rti.attributeHandle(rabbitClass, "Hunger");
+            ObjectInstanceHandle first = rti.objectHandle(102);
+            ObjectInstanceHandle second = rti.objectHandle(103);
+            ObjectInstanceHandle third = rti.objectHandle(104);
+            hlaInterface.discoverObjectInstance(first, rabbitClass, "Rabbit First");
+            hlaInterface.discoverObjectInstance(second, rabbitClass, "Rabbit Second", null);
+            hlaInterface.discoverObjectInstance(third, rabbitClass, "Rabbit Third");
+            AttributeHandleValueMap firstReflection = reflection(hunger, 1);
+            AttributeHandleValueMap secondReflection = reflection(hunger, 2);
+            AttributeHandleValueMap thirdReflection = reflection(hunger, 3);
+
+            hlaInterface.reflectAttributeValues(first, firstReflection, null, null, null, null);
+            hlaInterface.reflectAttributeValues(
+                    second,
+                    secondReflection,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+            hlaInterface.reflectAttributeValues(
+                    third,
+                    thirdReflection,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
+
+            hlaInterface.removeObjectInstance(first, null, null, null);
+            hlaInterface.removeObjectInstance(second, null, null, null, null, null);
+            hlaInterface.removeObjectInstance(third, null, null, null, null, null, null);
+
+            assertEquals(
+                    List.of(
+                            "{\"event\":\"create\"}",
+                            "{\"event\":\"create\"}",
+                            "{\"event\":\"create\"}",
+                            "{\"event\":\"delete\"}",
+                            "{\"event\":\"delete\"}",
+                            "{\"event\":\"delete\"}"),
+                    xapiClient.statements);
+            assertTrue(cache.currentObjects("Rabbit").isEmpty());
         }
     }
 
@@ -326,11 +680,32 @@ class HlaObjectSubscriptionTest {
     }
 
     private StatementTrigger objectUpdateTrigger(String className, String statement) {
+        return objectTrigger(StatementTrigger.Type.OBJECT_UPDATE, className, statement);
+    }
+
+    private StatementTrigger objectTrigger(
+            StatementTrigger.Type type,
+            String className,
+            String statement) {
         StatementTrigger trigger = new StatementTrigger();
-        trigger.type = StatementTrigger.Type.OBJECT_UPDATE;
+        trigger.type = type;
         trigger.clazz = className;
         trigger.statement = statement;
         return trigger;
+    }
+
+    private void reflect(
+            HlaInterfaceImpl hlaInterface,
+            ObjectInstanceHandle object,
+            AttributeHandle attribute,
+            int value) throws Exception {
+        hlaInterface.reflectAttributeValues(object, reflection(attribute, value), null, null, null, null);
+    }
+
+    private AttributeHandleValueMap reflection(AttributeHandle attribute, int value) {
+        AttributeHandleValueMap reflectedValues = new HLA1516eAttributeHandleValueMap();
+        reflectedValues.put(attribute, HLAEncodingTestSupport.int32(value, ByteOrder.BIG_ENDIAN));
+        return reflectedValues;
     }
 
     private Criterion comparison(String attribute, ComparisonOperator operator, Object value) {
@@ -383,6 +758,7 @@ class HlaObjectSubscriptionTest {
         HlaInterfaceImpl hlaInterface = new HlaInterfaceImpl();
         setField(hlaInterface, "objectCache", cache);
         setField(hlaInterface, "ambassador", ambassador);
+        setField(hlaInterface, "xapiConfig", config);
         setField(
                 hlaInterface,
                 "triggerDispatcher",
@@ -407,6 +783,48 @@ class HlaObjectSubscriptionTest {
     }
 
     private record AttributeRequest(ObjectInstanceHandle objectHandle, Set<String> attributes) {
+    }
+
+    private static final class FailOnceReflectionCache extends ObjectCache {
+
+        private boolean failNextReflection = true;
+
+        private FailOnceReflectionCache(
+                XapiConfig config,
+                FomCatalog catalog,
+                FOMXML fomXml,
+                HLADecoderRegistry decoderRegistry) {
+            super(config, catalog, fomXml, decoderRegistry);
+        }
+
+        @Override
+        public synchronized void reflectAttributeValues(
+                String objectHandle,
+                String className,
+                Map<String, byte[]> attributes) {
+            if (failNextReflection) {
+                failNextReflection = false;
+                throw new IllegalStateException("injected reflection failure");
+            }
+            super.reflectAttributeValues(objectHandle, className, attributes);
+        }
+    }
+
+    private static final class FailingRemovalCache extends ObjectCache {
+
+        private FailingRemovalCache(
+                XapiConfig config,
+                FomCatalog catalog,
+                FOMXML fomXml,
+                HLADecoderRegistry decoderRegistry,
+                String jdbcUrl) {
+            super(config, catalog, fomXml, decoderRegistry, jdbcUrl);
+        }
+
+        @Override
+        public synchronized void removeObject(String objectHandle) {
+            throw new IllegalStateException("injected removal failure");
+        }
     }
 
     private static final class RecordingXapiClient extends XapiClient {
@@ -456,6 +874,7 @@ class HlaObjectSubscriptionTest {
         private int knownClassResolutions;
         private int attributeNameResolutions;
         private ObjectClassHandle knownClass;
+        private boolean failAttributeRequestsForUnknownObjects;
 
         private RTIambassador proxy() {
             return (RTIambassador) Proxy.newProxyInstance(
@@ -487,7 +906,7 @@ class HlaObjectSubscriptionTest {
         }
 
         @Override
-        public Object invoke(Object proxy, Method method, Object[] args) {
+        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             return switch (method.getName()) {
                 case "getObjectClassHandle" -> classHandle((String) args[0]);
                 case "getObjectClassName" -> qualifiedClassName(classNames.get(args[0]));
@@ -500,6 +919,9 @@ class HlaObjectSubscriptionTest {
                     yield null;
                 }
                 case "requestAttributeValueUpdate" -> {
+                    if (failAttributeRequestsForUnknownObjects) {
+                        throw new ObjectInstanceNotKnown("object disappeared");
+                    }
                     requests.add(new AttributeRequest(
                             (ObjectInstanceHandle) args[0],
                             names((AttributeHandleSet) args[1])));

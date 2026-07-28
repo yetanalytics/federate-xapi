@@ -101,6 +101,45 @@ abstract class ObjectCachePersistenceTest {
     }
 
     @Test
+    void loadsCurrentObjectSnapshotWithTopLevelRawValuesAndMetadata() {
+        byte[] entityId = encoded(encoderFactory.createHLAASCIIstring("rabbit-one"));
+        byte[] hunger = encoded(encoderFactory.createHLAinteger32BE(75));
+        byte[] position = position(12, 8);
+        byte[] history = positionHistory(position(1, 2), position(3, 4));
+
+        try (ObjectCache cache = newCache(
+                "object-snapshot",
+                enabledConfig(),
+                dynamicArrayCatalog,
+                dynamicArrayFomXml)) {
+            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
+            cache.reflectAttributeValues(
+                    "object-1",
+                    "Rabbit",
+                    Map.of(
+                            "EntityId", entityId,
+                            "Hunger", hunger,
+                            "Position", position,
+                            "PositionHistory", history));
+
+            ObjectSnapshot snapshot = cache.findCurrentObjectSnapshot("object-1").orElseThrow();
+
+            assertEquals("object-1", snapshot.objectHandle());
+            assertEquals("Rabbit One", snapshot.objectName());
+            assertEquals("Rabbit", snapshot.className());
+            assertEquals(4, snapshot.attributes().size());
+            assertArrayEquals(entityId, snapshot.attributes().get("EntityId"));
+            assertArrayEquals(hunger, snapshot.attributes().get("Hunger"));
+            assertArrayEquals(position, snapshot.attributes().get("Position"));
+            assertArrayEquals(history, snapshot.attributes().get("PositionHistory"));
+
+            cache.removeObject("object-1");
+
+            assertTrue(cache.findCurrentObjectSnapshot("object-1").isEmpty());
+        }
+    }
+
+    @Test
     void validatesTheCompleteReflectionBeforeWriting() {
         byte[] oldHunger = encoded(encoderFactory.createHLAinteger32BE(40));
         byte[] newHunger = encoded(encoderFactory.createHLAinteger32BE(75));

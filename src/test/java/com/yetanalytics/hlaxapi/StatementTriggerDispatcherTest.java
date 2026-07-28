@@ -70,6 +70,34 @@ class StatementTriggerDispatcherTest {
         assertEquals(List.of("interaction"), enqueued);
     }
 
+    @Test
+    void lifecycleEventsMatchTheirExactTypeAndClass() {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                trigger(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", "rabbit-create"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "rabbit-update"),
+                trigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", "rabbit-delete"),
+                trigger(StatementTrigger.Type.OBJECT_DELETE, "Wolf", "wolf-delete"));
+        StatementTriggerDispatcher dispatcher =
+                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor());
+        ObjectInjectionContext rabbit =
+                new ObjectInjectionContext("Rabbit", "object-1", Map.of());
+
+        List<String> createStatements = dispatcher
+                .stage(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", rabbit)
+                .stream()
+                .map(StatementTriggerDispatcher.StagedStatement::statement)
+                .toList();
+        List<String> deleteStatements = dispatcher
+                .stage(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", rabbit)
+                .stream()
+                .map(StatementTriggerDispatcher.StagedStatement::statement)
+                .toList();
+
+        assertEquals(List.of("rabbit-create"), createStatements);
+        assertEquals(List.of("rabbit-delete"), deleteStatements);
+    }
+
     private StatementTrigger trigger(StatementTrigger.Type type, String className, String statement) {
         StatementTrigger trigger = new StatementTrigger();
         trigger.type = type;

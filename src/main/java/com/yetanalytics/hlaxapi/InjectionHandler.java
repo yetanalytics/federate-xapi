@@ -19,7 +19,6 @@ import com.yetanalytics.hlaxapi.cache.ValueResolution;
 import com.yetanalytics.hlaxapi.config.model.Expression;
 import com.yetanalytics.hlaxapi.config.model.ExpressionWalker;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
-import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
@@ -73,7 +72,7 @@ public class InjectionHandler {
         EventTargetDefinition target = targetDefinition(
                 context.getHlaClass(),
                 t,
-                context.getTriggerType() == StatementTrigger.Type.OBJECT_UPDATE);
+                context.getTriggerType() != null && context.getTriggerType().isObjectEvent());
         Class<?> hlaJavaType =
                 target.exists() ? hlaDecoderRegistry.getClassForType(target.primitiveType()) : null;
         Object result = XapiValueGenerator.getTestValue(context, t, hlaJavaType);

@@ -138,6 +138,26 @@ final class PostgresqlObjectCacheQueries implements ObjectCacheQueries {
     }
 
     @Override
+    public String loadCurrentObjectSnapshot() {
+        return """
+                SELECT i.object_handle, i.object_name, c.local_name, a.attribute_name, v.raw_bytes
+                FROM object_instance i
+                JOIN fom_object_class c ON c.id = i.class_id
+                LEFT JOIN object_attribute_current v
+                    ON v.instance_id = i.id
+                    AND v.attribute_id IN (
+                        SELECT top_level.id
+                        FROM fom_attribute top_level
+                        WHERE top_level.class_id = i.class_id
+                            AND top_level.path_key = top_level.attribute_name
+                    )
+                LEFT JOIN fom_attribute a ON a.id = v.attribute_id
+                WHERE i.object_handle = ? AND i.removed_at IS NULL
+                ORDER BY a.id
+                """;
+    }
+
+    @Override
     public String removeObject() {
         return "UPDATE object_instance SET removed_at = ? WHERE object_handle = ?";
     }

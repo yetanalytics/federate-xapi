@@ -187,6 +187,13 @@ public class ObjectCache implements AutoCloseable {
         store.removeObject(objectHandle, Instant.now().toString());
     }
 
+    public synchronized Optional<ObjectSnapshot> findCurrentObjectSnapshot(String objectHandle) {
+        if (!isEnabled()) {
+            return Optional.empty();
+        }
+        return store.findCurrentObjectSnapshot(objectHandle);
+    }
+
     public synchronized Optional<CachedValue> findCurrentValue(long instanceId, String pathKey) {
         if (!isEnabled()) {
             return Optional.empty();
@@ -235,6 +242,7 @@ public class ObjectCache implements AutoCloseable {
         Map<String, Set<String>> merged = new LinkedHashMap<>();
         QueryReferenceCollector.collect(xapiConfig.statementTriggers)
                 .forEach((className, attributes) -> addAttributes(merged, className, attributes));
+        addObjectDeleteTriggers(merged, xapiConfig);
         addTrackedObjects(merged, xapiConfig);
         return copySubscriptions(merged);
     }
@@ -246,7 +254,8 @@ public class ObjectCache implements AutoCloseable {
         }
         for (StatementTrigger trigger : xapiConfig.statementTriggers) {
             if (trigger == null
-                    || trigger.type != StatementTrigger.Type.OBJECT_UPDATE
+                    || trigger.type == null
+                    || !trigger.type.isObjectEvent()
                     || trigger.clazz == null
                     || trigger.clazz.isBlank()) {
                 continue;
@@ -260,6 +269,22 @@ public class ObjectCache implements AutoCloseable {
             }
         }
         return copySubscriptions(events);
+    }
+
+    private void addObjectDeleteTriggers(Map<String, Set<String>> merged, XapiConfig xapiConfig) {
+        if (xapiConfig.statementTriggers == null) {
+            return;
+        }
+        for (StatementTrigger trigger : xapiConfig.statementTriggers) {
+            if (trigger == null
+                    || trigger.type != StatementTrigger.Type.OBJECT_DELETE
+                    || trigger.clazz == null
+                    || trigger.clazz.isBlank()) {
+                continue;
+            }
+            catalog.objectClass(trigger.clazz).ifPresent(clazz ->
+                    addAttributes(merged, clazz.localName(), clazz.topLevelAttributeNames()));
+        }
     }
 
     @SafeVarargs

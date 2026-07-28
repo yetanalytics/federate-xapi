@@ -9,6 +9,8 @@ interface ObjectCacheStore extends AutoCloseable {
 
     CachedObject ensureObject(String objectHandle, String objectName, FomCatalog.ObjectClassDef clazz);
 
+    Optional<ObjectSnapshot> findCurrentObjectSnapshot(String objectHandle);
+
     void removeObject(String objectHandle, String removedAt);
 
     Optional<CachedValue> findCurrentValue(long instanceId, String pathKey);

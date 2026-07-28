@@ -3,6 +3,7 @@ package com.yetanalytics.hlaxapi;
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 import com.yetanalytics.hlaxapi.TriggerProcessor.TriggerProcessingResult;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
+import com.yetanalytics.hlaxapi.cache.ObjectSnapshot;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.exception.XapiConfigurationException;
@@ -84,6 +86,8 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     private static final Logger logger = LogManager.getLogger(HlaInterfaceImpl.class);
 
     private RTIambassador ambassador;
+
+    private final Map<String, String> pendingObjectCreates = new HashMap<>();
 
     @Autowired
     private XapiConfig xapiConfig;
@@ -275,6 +279,9 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         if (subscribedAttributes == null || subscribedAttributes.isEmpty()) {
             return;
         }
+        if (hasObjectCreateTrigger(className)) {
+            pendingObjectCreates.put(theObject.toString(), className);
+        }
         if (objectCache.isEnabled()) {
             try {
                 objectCache.discoverObject(theObject.toString(), objectName, className);
@@ -288,11 +295,22 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 ambassador.requestAttributeValueUpdate(theObject, attributeHandles, new byte[0]);
             }
             logger.info("Discovered object {} as {}", objectName, className);
-        } catch (AttributeNotDefined | InvalidObjectClassHandle | NameNotFound | ObjectInstanceNotKnown
-                | FederateNotExecutionMember | SaveInProgress | RestoreInProgress | NotConnected | RTIinternalError
-                | RuntimeException e) {
+        } catch (ObjectInstanceNotKnown e) {
+            logger.debug("Discovered object {} was removed before its attributes could be requested", objectName);
+        } catch (AttributeNotDefined | InvalidObjectClassHandle | NameNotFound | FederateNotExecutionMember
+                | SaveInProgress | RestoreInProgress | NotConnected | RTIinternalError | RuntimeException e) {
             logger.error("Error requesting values for discovered object {}", objectName, e);
         }
+    }
+
+    private boolean hasObjectCreateTrigger(String className) {
+        if (xapiConfig == null || xapiConfig.statementTriggers == null) {
+            return false;
+        }
+        return xapiConfig.statementTriggers.stream()
+                .anyMatch(trigger -> trigger != null
+                        && trigger.type == StatementTrigger.Type.OBJECT_CREATE
+                        && className.equals(trigger.clazz));
     }
 
     private AttributeHandleSet attributeHandles(
@@ -358,9 +376,18 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             }
             ObjectInjectionContext context =
                     new ObjectInjectionContext(className, theObject.toString(), attributes);
-            List<StatementTriggerDispatcher.StagedStatement> statements =
-                    triggerDispatcher.stage(StatementTrigger.Type.OBJECT_UPDATE, className, context);
+            boolean createPending = className.equals(pendingObjectCreates.get(theObject.toString()));
+            List<StatementTriggerDispatcher.StagedStatement> statements = new ArrayList<>();
+            if (createPending) {
+                statements.addAll(
+                        triggerDispatcher.stage(StatementTrigger.Type.OBJECT_CREATE, className, context));
+            }
+            statements.addAll(
+                    triggerDispatcher.stage(StatementTrigger.Type.OBJECT_UPDATE, className, context));
             objectCache.reflectAttributeValues(theObject.toString(), className, attributes);
+            if (createPending) {
+                pendingObjectCreates.remove(theObject.toString(), className);
+            }
             triggerDispatcher.enqueue(statements, xapiClient::sendStatement);
         } catch (AttributeNotDefined | InvalidAttributeHandle | InvalidObjectClassHandle | ObjectInstanceNotKnown
                 | FederateNotExecutionMember | NotConnected | RTIinternalError | RuntimeException e) {
@@ -401,11 +428,29 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     }
 
     private void removeCachedObject(ObjectInstanceHandle theObject) {
+        String objectHandle = theObject.toString();
+        pendingObjectCreates.remove(objectHandle);
         if (!objectCache.isEnabled()) {
             return;
         }
         try {
-            objectCache.removeObject(theObject.toString());
+            ObjectSnapshot snapshot = objectCache.findCurrentObjectSnapshot(objectHandle).orElse(null);
+            List<StatementTriggerDispatcher.StagedStatement> statements = List.of();
+            if (snapshot != null) {
+                ObjectInjectionContext context = new ObjectInjectionContext(
+                        snapshot.className(),
+                        snapshot.objectHandle(),
+                        snapshot.attributes());
+                statements = triggerDispatcher.stage(
+                        StatementTrigger.Type.OBJECT_DELETE,
+                        snapshot.className(),
+                        context);
+            } else {
+                logger.debug("Skipping ObjectDelete triggers for unknown or removed object {}", theObject);
+                return;
+            }
+            objectCache.removeObject(objectHandle);
+            triggerDispatcher.enqueue(statements, xapiClient::sendStatement);
         } catch (RuntimeException e) {
             logger.error("Error removing cached object {}", theObject, e);
         }

@@ -90,6 +90,49 @@ class ObjectCacheTest {
     }
 
     @Test
+    void objectCreateSubscriptionsDoNotEnableCacheAndIncludeInheritedAttributes(@TempDir Path tempDir) {
+        Path databasePath = tempDir.resolve("object-create-only.sqlite");
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(objectTrigger(StatementTrigger.Type.OBJECT_CREATE, "Rabbit"));
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + databasePath)) {
+            Set<String> rabbitAttributes =
+                    Set.copyOf(catalog.objectClass("Rabbit").orElseThrow().topLevelAttributeNames());
+
+            assertFalse(cache.isEnabled());
+            assertTrue(cache.cacheSubscriptions().isEmpty());
+            assertEquals(rabbitAttributes, cache.eventSubscriptions().get("Rabbit"));
+            assertFalse(Files.exists(databasePath));
+        }
+    }
+
+    @Test
+    void objectDeleteSubscriptionsEnableCacheForAllInheritedAttributes(@TempDir Path tempDir) {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(objectTrigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit"));
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("object-delete.sqlite"))) {
+            Set<String> rabbitAttributes =
+                    Set.copyOf(catalog.objectClass("Rabbit").orElseThrow().topLevelAttributeNames());
+
+            assertTrue(cache.isEnabled());
+            assertEquals(rabbitAttributes, cache.cacheSubscriptions().get("Rabbit"));
+            assertEquals(rabbitAttributes, cache.eventSubscriptions().get("Rabbit"));
+            assertEquals(rabbitAttributes, cache.subscriptions().get("Rabbit"));
+        }
+    }
+
+    @Test
     void objectUpdateSubscriptionsMergeWithoutChangingCacheRequirements(@TempDir Path tempDir) {
         XapiConfig config = configWithQuery();
         config.statementTriggers = List.of(
@@ -286,8 +329,12 @@ class ObjectCacheTest {
     }
 
     private StatementTrigger objectUpdateTrigger(String className) {
+        return objectTrigger(StatementTrigger.Type.OBJECT_UPDATE, className);
+    }
+
+    private StatementTrigger objectTrigger(StatementTrigger.Type type, String className) {
         StatementTrigger trigger = new StatementTrigger();
-        trigger.type = StatementTrigger.Type.OBJECT_UPDATE;
+        trigger.type = type;
         trigger.clazz = className;
         trigger.statement = "{}";
         return trigger;

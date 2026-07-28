@@ -79,25 +79,31 @@ class ObjectInjectionHandlerTest {
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
-    void validatesObjectUpdateTargetsAgainstInheritedObjectAttributes() {
+    void validatesEveryObjectEventTargetAgainstInheritedObjectAttributes() {
         TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
-        StatementTrigger valid = trigger("""
-                {"object":{"id":["trigger",["EntityId"]]}}
-                """);
-        StatementTrigger wrongType = trigger("""
-                {"object":{"id":["trigger",["Count"]]}}
-                """);
-        TestInjectionContext context =
-                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "TrackedEntity");
+        for (StatementTrigger.Type type : List.of(
+                StatementTrigger.Type.OBJECT_CREATE,
+                StatementTrigger.Type.OBJECT_UPDATE,
+                StatementTrigger.Type.OBJECT_DELETE)) {
+            StatementTrigger valid = trigger("""
+                    {"object":{"id":["trigger",["EntityId"]]}}
+                    """);
+            valid.type = type;
+            StatementTrigger wrongType = trigger("""
+                    {"object":{"id":["trigger",["Count"]]}}
+                    """);
+            wrongType.type = type;
+            TestInjectionContext context = new TestInjectionContext(type, "TrackedEntity");
 
-        TriggerProcessor.TriggerProcessingResult validResult =
-                processor.renderTemplateForValidation(valid, context);
-        TriggerProcessor.TriggerProcessingResult wrongTypeResult =
-                processor.renderTemplateForValidation(wrongType, context);
+            TriggerProcessor.TriggerProcessingResult validResult =
+                    processor.renderTemplateForValidation(valid, context);
+            TriggerProcessor.TriggerProcessingResult wrongTypeResult =
+                    processor.renderTemplateForValidation(wrongType, context);
 
-        assertTrue(validResult.success());
-        assertTrue(validResult.statement().contains("https://example.com/object"));
-        assertFalse(wrongTypeResult.success());
+            assertTrue(validResult.success());
+            assertTrue(validResult.statement().contains("https://example.com/object"));
+            assertFalse(wrongTypeResult.success());
+        }
     }
 
     @Test
