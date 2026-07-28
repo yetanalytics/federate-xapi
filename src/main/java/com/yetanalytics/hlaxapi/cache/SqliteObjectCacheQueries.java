@@ -166,13 +166,15 @@ final class SqliteObjectCacheQueries implements ObjectCacheQueries {
     }
 
     @Override
-    public String listCurrentObjects() {
+    public String listCurrentObjects(int classCount) {
+        String placeholders = String.join(", ", java.util.Collections.nCopies(classCount, "?"));
         return """
-                SELECT id, object_handle, object_name
-                FROM object_instance
-                WHERE class_id = ? AND removed_at IS NULL
-                ORDER BY id
-                """;
+                SELECT i.id, i.object_handle, i.object_name, c.local_name
+                FROM object_instance i
+                JOIN fom_object_class c ON c.id = i.class_id
+                WHERE i.class_id IN (%s) AND i.removed_at IS NULL
+                ORDER BY i.id
+                """.formatted(placeholders);
     }
 
     @Override

@@ -32,7 +32,7 @@ interface ObjectCacheQueries {
 
     String findObjectId();
 
-    String listCurrentObjects();
+    String listCurrentObjects(int classCount);
 
     String deleteCurrentValues();
 

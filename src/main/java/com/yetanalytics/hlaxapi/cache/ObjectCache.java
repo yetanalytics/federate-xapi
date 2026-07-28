@@ -212,8 +212,9 @@ public class ObjectCache implements AutoCloseable {
         if (!isEnabled()) {
             return List.of();
         }
-        FomCatalog.ObjectClassDef clazz = requireClass(className);
-        return store.currentObjects(clazz);
+        FomCatalog.ObjectClassDef requestedClass = requireClass(className);
+        return store.currentObjects(
+                catalog.objectClassAndDescendants(requestedClass.localName()));
     }
 
     Connection connection() {

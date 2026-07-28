@@ -10,20 +10,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.yetanalytics.hlaxapi.FOMXML;
 import com.yetanalytics.hlaxapi.HLAEncodingTestSupport;
 import com.yetanalytics.hlaxapi.HLADecoderRegistry;
+import com.yetanalytics.hlaxapi.InjectionHandler;
 import com.yetanalytics.hlaxapi.SimulationConfig;
+import com.yetanalytics.hlaxapi.TriggerProcessor;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.ComparisonOperator;
 import com.yetanalytics.hlaxapi.config.model.Criterion;
 import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
 import com.yetanalytics.hlaxapi.config.model.LogicalOperator;
 import com.yetanalytics.hlaxapi.config.model.ObjectCacheConfig;
+import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TrackedObject;
+import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
+import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
 import hla.rti1516e.encoding.DataElement;
 import hla.rti1516e.encoding.EncoderException;
 import hla.rti1516e.encoding.EncoderFactory;
 import hla.rti1516e.encoding.HLAfixedRecord;
+import java.lang.reflect.Field;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -389,6 +396,93 @@ abstract class ObjectCachePersistenceTest {
     }
 
     @Test
+    void baseClassQueryFindsObjectsCachedAsDescendantClasses() {
+        try (ObjectCache cache = newCache()) {
+            cache.discoverObject("entity-1", "Entity One", "SimEntity");
+            cache.discoverObject("rabbit-1", "Rabbit One", "Rabbit");
+            cache.reflectAttributeValues(
+                    "rabbit-1",
+                    "Rabbit",
+                    Map.of(
+                            "EntityId", encoded(encoderFactory.createHLAASCIIstring("rabbit-one")),
+                            "FirstName", encoded(encoderFactory.createHLAunicodeString("Alice"))));
+            cache.discoverObject("wolf-1", "Wolf One", "Wolf");
+            Criterion entityId = new Criterion(
+                    new Target(List.of("EntityId")),
+                    ComparisonOperator.EQ,
+                    new ValueExpression("rabbit-one"));
+
+            CachedObject matched =
+                    cache.queryService().findFirstObject("SimEntity", entityId).orElseThrow();
+
+            assertEquals("Rabbit", matched.className());
+            assertEquals(
+                    "Alice",
+                    cache.queryService()
+                            .findValue(matched, new Target(List.of("FirstName")))
+                            .orElseThrow());
+            assertEquals(
+                    List.of("entity-1", "rabbit-1", "wolf-1"),
+                    cache.currentObjects("SimEntity").stream()
+                            .map(CachedObject::objectHandle)
+                            .toList());
+            assertEquals(
+                    List.of("rabbit-1"),
+                    cache.currentObjects("Rabbit").stream()
+                            .map(CachedObject::objectHandle)
+                            .toList());
+
+            cache.removeObject("wolf-1");
+
+            assertEquals(
+                    List.of("entity-1", "rabbit-1"),
+                    cache.currentObjects("SimEntity").stream()
+                            .map(CachedObject::objectHandle)
+                            .toList());
+        }
+    }
+
+    @Test
+    void entityAteLookupFindsRabbitThroughSimEntityBaseClass() throws Exception {
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues(
+                    "rabbit-1",
+                    "Rabbit",
+                    Map.of(
+                            "EntityId", encoded(encoderFactory.createHLAASCIIstring("rabbit-one")),
+                            "FirstName", encoded(encoderFactory.createHLAunicodeString("Alice"))));
+            ObjectLookup predator = new ObjectLookup();
+            predator.clazz = "SimEntity";
+            predator.criteria = new Criterion(
+                    new Target(List.of("EntityId")),
+                    ComparisonOperator.EQ,
+                    new TriggerExpression(new Target(List.of("PredatorId"))));
+            StatementTrigger trigger = new StatementTrigger();
+            trigger.type = StatementTrigger.Type.INTERACTION;
+            trigger.clazz = "EntityAte";
+            trigger.lookups = Map.of("predator", predator);
+            trigger.statement = "{\"predator\":[\"lookup\",\"predator\",[\"FirstName\"]]}";
+            InjectionHandler injectionHandler = new InjectionHandler();
+            injectionHandler.setFomXml(fomXml);
+            injectionHandler.setHLADecoderRegistry(decoderRegistry);
+            injectionHandler.setFomCatalog(catalog);
+            setField(injectionHandler, "objectCache", cache);
+
+            TriggerProcessor.TriggerProcessingResult result =
+                    new TriggerProcessor(injectionHandler).processTrigger(
+                            trigger,
+                            new InteractionInjectionContext(
+                                    "EntityAte",
+                                    Map.of(
+                                            "PredatorId",
+                                            encoded(encoderFactory.createHLAASCIIstring("rabbit-one")))));
+
+            assertTrue(result.success());
+            assertEquals("{\"predator\":\"Alice\"}", result.statement());
+        }
+    }
+
+    @Test
     void queryServiceDistinguishesPresentNullFromMissingValue() {
         try (ObjectCache cache = newCache()) {
             cache.discoverObject("object-1", "Rabbit One", "Rabbit");
@@ -479,6 +573,12 @@ abstract class ObjectCachePersistenceTest {
                 ResultSet resultSet = statement.executeQuery()) {
             return resultSet.next() ? resultSet.getLong(1) : 0L;
         }
+    }
+
+    private void setField(Object target, String fieldName, Object value) throws ReflectiveOperationException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     protected byte[] rawBytes(ObjectCache cache, String pathKey) throws SQLException {

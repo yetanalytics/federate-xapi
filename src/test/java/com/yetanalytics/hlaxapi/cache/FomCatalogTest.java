@@ -44,6 +44,23 @@ class FomCatalogTest {
     }
 
     @Test
+    void resolvesObjectClassesWithTheirDescendants() {
+        FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
+
+        assertEquals(
+                List.of("SimEntity", "Carrot", "Rabbit", "Wolf"),
+                catalog.objectClassAndDescendants("SimEntity").stream()
+                        .map(FomCatalog.ObjectClassDef::localName)
+                        .toList());
+        assertEquals(
+                List.of("Rabbit"),
+                catalog.objectClassAndDescendants("Rabbit").stream()
+                        .map(FomCatalog.ObjectClassDef::localName)
+                        .toList());
+        assertEquals(List.of(), catalog.objectClassAndDescendants("MissingObject"));
+    }
+
+    @Test
     void fomXmlReturnsHierarchyWithDeclaredAttributes() {
         FOMXML fomXml = fomXml("config/HlaFedereplFOM.xml");
 

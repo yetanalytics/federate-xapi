@@ -17,7 +17,7 @@ interface ObjectCacheStore extends AutoCloseable {
 
     Optional<CachedValue> findCurrentValue(String objectHandle, String pathKey);
 
-    List<CachedObject> currentObjects(FomCatalog.ObjectClassDef clazz);
+    List<CachedObject> currentObjects(List<FomCatalog.ObjectClassDef> classes);
 
     void replaceCurrentValues(
             String objectHandle,

@@ -125,22 +125,27 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
     }
 
     @Override
-    public List<CachedObject> currentObjects(FomCatalog.ObjectClassDef clazz) {
+    public List<CachedObject> currentObjects(List<FomCatalog.ObjectClassDef> classes) {
+        if (classes == null || classes.isEmpty()) {
+            return List.of();
+        }
         List<CachedObject> objects = new ArrayList<>();
-        try (PreparedStatement statement = connection.prepareStatement(queries.listCurrentObjects())) {
-            statement.setInt(1, clazz.id());
+        try (PreparedStatement statement =
+                connection.prepareStatement(queries.listCurrentObjects(classes.size()))) {
+            for (int i = 0; i < classes.size(); i++) {
+                statement.setInt(i + 1, classes.get(i).id());
+            }
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     objects.add(new CachedObject(
                             resultSet.getLong("id"),
                             resultSet.getString("object_handle"),
                             resultSet.getString("object_name"),
-                            clazz.localName()));
+                            resultSet.getString("local_name")));
                 }
             }
         } catch (SQLException e) {
-            throw new IllegalStateException(
-                    "Could not list cached objects for class " + clazz.localName(), e);
+            throw new IllegalStateException("Could not list current cached objects", e);
         }
         return objects;
     }

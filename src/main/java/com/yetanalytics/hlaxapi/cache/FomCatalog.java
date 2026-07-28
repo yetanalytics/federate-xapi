@@ -55,6 +55,16 @@ public final class FomCatalog {
         return Optional.ofNullable(classesById.get(id));
     }
 
+    public List<ObjectClassDef> objectClassAndDescendants(String name) {
+        ObjectClassDef requestedClass = objectClass(name).orElse(null);
+        if (requestedClass == null) {
+            return List.of();
+        }
+        return classesByName.values().stream()
+                .filter(candidate -> isSameOrDescendant(candidate, requestedClass))
+                .toList();
+    }
+
     public Optional<FomAttribute> attribute(int id) {
         return Optional.ofNullable(attributesById.get(id));
     }
@@ -106,6 +116,17 @@ public final class FomCatalog {
         String trimmed = hlaName.trim();
         int index = trimmed.lastIndexOf('.');
         return index >= 0 ? trimmed.substring(index + 1) : trimmed;
+    }
+
+    private boolean isSameOrDescendant(ObjectClassDef candidate, ObjectClassDef requestedClass) {
+        ObjectClassDef current = candidate;
+        while (current != null) {
+            if (current.localName().equals(requestedClass.localName())) {
+                return true;
+            }
+            current = classesByName.get(current.parentName());
+        }
+        return false;
     }
 
     public record ObjectClassDef(
