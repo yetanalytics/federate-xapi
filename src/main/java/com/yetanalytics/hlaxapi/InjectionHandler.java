@@ -18,7 +18,10 @@ import com.yetanalytics.hlaxapi.cache.ObjectCache;
 import com.yetanalytics.hlaxapi.cache.ValueResolution;
 import com.yetanalytics.hlaxapi.config.model.Expression;
 import com.yetanalytics.hlaxapi.config.model.ExpressionWalker;
+import com.yetanalytics.hlaxapi.config.model.LookupExpression;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
+import com.yetanalytics.hlaxapi.config.model.QueryExpression;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
@@ -70,13 +73,37 @@ public class InjectionHandler {
     }
 
     public ValueResolution handleTrigger(Target t, TestInjectionContext context) {
-        EventTargetDefinition target = targetDefinition(
+        EventTargetDefinition target = requireEventTargetDefinition(
                 context.getHlaClass(),
                 t,
-                context.getTriggerType() != null && context.getTriggerType().isObjectEvent());
+                context.getTriggerType() != null && context.getTriggerType().isObjectEvent(),
+                "trigger");
+        return testValue(target, t, context);
+    }
+
+    public void validateCriteriaSources(
+            StatementTrigger trigger,
+            TestInjectionContext context) {
+        Map<String, ObjectLookup> lookups =
+                trigger.lookups == null ? Map.of() : trigger.lookups;
+        validateExpressionSources(
+                trigger.criteria,
+                new ValidationSource(context, lookups, null));
+        lookups.forEach((alias, lookup) -> {
+            ObjectLookup definition = requireLookupClass(alias, lookup);
+            validateExpressionSources(
+                    definition.criteria,
+                    new ValidationSource(context, lookups, definition.clazz));
+        });
+    }
+
+    private ValueResolution testValue(
+            EventTargetDefinition target,
+            Target injectionTarget,
+            TestInjectionContext context) {
         Class<?> hlaJavaType =
                 target.exists() ? hlaDecoderRegistry.getClassForType(target.primitiveType()) : null;
-        Object result = XapiValueGenerator.getTestValue(context, t, hlaJavaType);
+        Object result = XapiValueGenerator.getTestValue(context, injectionTarget, hlaJavaType);
         return ValueResolution.present(result);
     }
 
@@ -124,6 +151,40 @@ public class InjectionHandler {
         return objectEvent
                 ? objectTargetDefinition(hlaClass, target)
                 : interactionTargetDefinition(hlaClass, target);
+    }
+
+    private EventTargetDefinition requireEventTargetDefinition(
+            String hlaClass,
+            Target target,
+            boolean objectEvent,
+            String source) {
+        EventTargetDefinition definition = targetDefinition(hlaClass, target, objectEvent);
+        if (!definition.exists()) {
+            throw missingTarget(source, hlaClass, target);
+        }
+        return definition;
+    }
+
+    private EventTargetDefinition requireObjectTargetDefinition(
+            String hlaClass,
+            Target target,
+            String source) {
+        EventTargetDefinition definition = objectTargetDefinition(hlaClass, target);
+        if (!definition.exists()) {
+            throw missingTarget(source, hlaClass, target);
+        }
+        return definition;
+    }
+
+    private IllegalArgumentException missingTarget(
+            String source,
+            String hlaClass,
+            Target target) {
+        return new IllegalArgumentException(
+                source + " target "
+                        + (target == null ? "<null>" : target.parts)
+                        + " does not exist on FOM class "
+                        + hlaClass);
     }
 
     private EventTargetDefinition interactionTargetDefinition(String hlaClass, Target target) {
@@ -305,7 +366,11 @@ public class InjectionHandler {
                     "previous values are only available to ObjectUpdate triggers");
         }
         if (context instanceof TestInjectionContext testContext) {
-            return handleTrigger(target, testContext);
+            EventTargetDefinition definition = requireObjectTargetDefinition(
+                    testContext.getHlaClass(),
+                    target,
+                    "previous");
+            return testValue(definition, target, testContext);
         }
         if (!(context instanceof ObjectInjectionContext objectContext)) {
             throw new IllegalArgumentException(
@@ -326,11 +391,13 @@ public class InjectionHandler {
             InjectionContext context) {
 
         // Validation Test-Injection
-        if (context instanceof TestInjectionContext){
-            PathCheckResult pcr = fomXml.checkInteractionParameterPath(context.getHlaClass(), attrTarget.parts);
-            Class<?> hlaJavaType = (pcr.exists) ? hlaDecoderRegistry.getClassForType(pcr.primitiveType) : null;
-            Object result = XapiValueGenerator.getTestValue(context, attrTarget, hlaJavaType);
-            return ValueResolution.present(result);
+        if (context instanceof TestInjectionContext testContext) {
+            EventTargetDefinition target =
+                    requireObjectTargetDefinition(clazz, attrTarget, "query");
+            validateExpressionSources(
+                    criteria,
+                    new ValidationSource(testContext, Map.of(), clazz));
+            return testValue(target, attrTarget, testContext);
         }
 
         if (objectCache == null) {
@@ -352,17 +419,106 @@ public class InjectionHandler {
     public ValueResolution handleLookup(CachedObject object, Target attrTarget, InjectionContext context) {
 
         // Validation Test-Injection
-        if (context instanceof TestInjectionContext){
-            PathCheckResult pcr = fomXml.checkInteractionParameterPath(context.getHlaClass(), attrTarget.parts);
-            Class<?> hlaJavaType = (pcr.exists) ? hlaDecoderRegistry.getClassForType(pcr.primitiveType) : null;
-            Object result = XapiValueGenerator.getTestValue(context, attrTarget, hlaJavaType);
-            return ValueResolution.present(result);
+        if (context instanceof TestInjectionContext) {
+            throw new IllegalArgumentException(
+                    "lookup validation requires its lookup definition");
         }
 
         if (objectCache == null || object == null) {
             return ValueResolution.missingObject();
         }
         return objectCache.findValueResolution(object, attrTarget);
+    }
+
+    public ValueResolution handleLookup(
+            String alias,
+            ObjectLookup lookup,
+            Target attrTarget,
+            TestInjectionContext context) {
+        requireLookupClass(alias, lookup);
+        EventTargetDefinition target =
+                requireObjectTargetDefinition(lookup.clazz, attrTarget, "lookup(" + alias + ")");
+        return testValue(target, attrTarget, context);
+    }
+
+    private void validateExpressionSources(
+            Expression expression,
+            ValidationSource initialState) {
+        ExpressionWalker.walk(
+                expression,
+                initialState,
+                new ExpressionWalker.Visitor<>() {
+                    @Override
+                    public void visit(Expression candidate, ValidationSource state) {
+                        if (candidate instanceof TriggerExpression trigger) {
+                            TestInjectionContext event = state.eventContext();
+                            requireEventTargetDefinition(
+                                    event.getHlaClass(),
+                                    trigger.target,
+                                    event.getTriggerType() != null
+                                            && event.getTriggerType().isObjectEvent(),
+                                    "trigger");
+                        } else if (candidate instanceof PreviousExpression previous) {
+                            TestInjectionContext event = state.eventContext();
+                            if (event.getTriggerType() != StatementTrigger.Type.OBJECT_UPDATE) {
+                                throw new IllegalArgumentException(
+                                        "previous values are only available to ObjectUpdate triggers");
+                            }
+                            requireObjectTargetDefinition(
+                                    event.getHlaClass(),
+                                    previous.target,
+                                    "previous");
+                        } else if (candidate instanceof QueryExpression query) {
+                            requireObjectTargetDefinition(
+                                    query.clazz,
+                                    query.target,
+                                    "query");
+                        } else if (candidate instanceof LookupExpression lookup) {
+                            ObjectLookup definition =
+                                    requireLookupClass(lookup.alias, state.lookups().get(lookup.alias));
+                            requireObjectTargetDefinition(
+                                    definition.clazz,
+                                    lookup.target,
+                                    "lookup(" + lookup.alias + ")");
+                        } else if (candidate instanceof Target target) {
+                            if (state.cacheClass() == null) {
+                                throw new IllegalArgumentException(
+                                        "bare target " + target.parts
+                                                + " is not scoped to a cache class");
+                            }
+                            requireObjectTargetDefinition(
+                                    state.cacheClass(),
+                                    target,
+                                    "cache");
+                        }
+                    }
+
+                    @Override
+                    public ValidationSource stateForChild(
+                            Expression parent,
+                            ExpressionWalker.Child child,
+                            ValidationSource state) {
+                        String cacheClass = child.role() == ExpressionWalker.ChildRole.QUERY_FILTER
+                                ? ((QueryExpression) parent).clazz
+                                : state.cacheClass();
+                        return new ValidationSource(
+                                state.eventContext(),
+                                state.lookups(),
+                                cacheClass);
+                    }
+                });
+    }
+
+    private ObjectLookup requireLookupClass(String alias, ObjectLookup lookup) {
+        if (lookup == null || lookup.clazz == null || lookup.clazz.isBlank()) {
+            throw new IllegalArgumentException(
+                    "lookup alias '" + alias + "' does not define an object class");
+        }
+        if (fomCatalog.objectClass(lookup.clazz).isEmpty()) {
+            throw new IllegalArgumentException(
+                    "lookup alias '" + alias + "' references unknown FOM class " + lookup.clazz);
+        }
+        return lookup;
     }
 
     private Expression resolveTriggerExpressions(Expression expression, InjectionContext context) {
@@ -403,5 +559,11 @@ public class InjectionHandler {
         private static EventTargetDefinition missing() {
             return new EventTargetDefinition(false, null, null);
         }
+    }
+
+    private record ValidationSource(
+            TestInjectionContext eventContext,
+            Map<String, ObjectLookup> lookups,
+            String cacheClass) {
     }
 }

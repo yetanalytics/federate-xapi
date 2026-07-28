@@ -8,8 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.yetanalytics.extension.SuppressTestLogging;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ValueResolution;
+import com.yetanalytics.hlaxapi.config.model.ComparisonOperator;
+import com.yetanalytics.hlaxapi.config.model.Criterion;
+import com.yetanalytics.hlaxapi.config.model.Expression;
+import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
+import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
+import com.yetanalytics.hlaxapi.config.model.ValueExpression;
 import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import java.nio.ByteOrder;
@@ -107,18 +114,99 @@ class ObjectInjectionHandlerTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
+    void rejectsMissingObjectTargetsInStatementsAndCriteriaEvenWhenOptional() {
+        TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
+        TestInjectionContext context =
+                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "TrackedEntity");
+        StatementTrigger missingTrigger = trigger("""
+                {"missing":["trigger",["NotAnAttribute"],{"required":false}]}
+                """);
+        StatementTrigger missingPrevious = trigger("""
+                {"missing":["previous",["NotAnAttribute"],{"required":false}]}
+                """);
+        StatementTrigger missingTriggerCriterion = trigger("{}", new Criterion(
+                new TriggerExpression(target("NotAnAttribute")),
+                ComparisonOperator.EQ,
+                new ValueExpression(1)));
+        StatementTrigger missingPreviousCriterion = trigger("{}", new Criterion(
+                new PreviousExpression(target("NotAnAttribute")),
+                ComparisonOperator.EQ,
+                new ValueExpression(1)));
+
+        assertFalse(processor.renderTemplateForValidation(missingTrigger, context).success());
+        assertFalse(processor.renderTemplateForValidation(missingPrevious, context).success());
+        assertFalse(processor.renderTemplateForValidation(missingTriggerCriterion, context).success());
+        assertFalse(processor.renderTemplateForValidation(missingPreviousCriterion, context).success());
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
+    void validatesQueryAndLookupPathsAgainstTheirReferencedObjectClasses() {
+        TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
+        TestInjectionContext context =
+                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "TrackedEntity");
+        StatementTrigger valid = trigger("""
+                {
+                  "result":{"score":{"raw":["query","BaseEntity",["Position","X"],null]}},
+                  "lookup":["lookup","base",["EntityId"]]
+                }
+                """);
+        valid.lookups = Map.of("base", lookup("BaseEntity", new Criterion(
+                target("Position", "Y"),
+                ComparisonOperator.GT,
+                new ValueExpression(0))));
+        StatementTrigger wrongQueryDatatype = trigger("""
+                {"result":{"score":{"raw":["query","BaseEntity",["EntityId"],null]}}}
+                """);
+        StatementTrigger missingQueryTarget = trigger("""
+                {"value":["query","BaseEntity",["NotAnAttribute"],null,{"required":false}]}
+                """);
+        StatementTrigger missingQueryCriterion = trigger("""
+                {"value":["query","BaseEntity",["EntityId"],[["NotAnAttribute"],"=",1]]}
+                """);
+        StatementTrigger missingLookupTarget = trigger("""
+                {"value":["lookup","base",["NotAnAttribute"],{"required":false}]}
+                """);
+        missingLookupTarget.lookups = Map.of("base", lookup("BaseEntity", null));
+        StatementTrigger missingLookupCriterion = trigger("{}");
+        missingLookupCriterion.lookups = Map.of("base", lookup("BaseEntity", new Criterion(
+                target("NotAnAttribute"),
+                ComparisonOperator.EQ,
+                new ValueExpression(1))));
+
+        assertTrue(processor.renderTemplateForValidation(valid, context).success());
+        assertFalse(processor.renderTemplateForValidation(wrongQueryDatatype, context).success());
+        assertFalse(processor.renderTemplateForValidation(missingQueryTarget, context).success());
+        assertFalse(processor.renderTemplateForValidation(missingQueryCriterion, context).success());
+        assertFalse(processor.renderTemplateForValidation(missingLookupTarget, context).success());
+        assertFalse(processor.renderTemplateForValidation(missingLookupCriterion, context).success());
+    }
+
+    @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
     void interactionValidationRemainsTheDefault() {
         TriggerProcessor processor = new TriggerProcessor(handler(SIMULATION_FOM));
         StatementTrigger interaction = trigger("""
                 {"result":{"score":{"raw":["trigger",["StepNumber"]]}}}
                 """);
+        interaction.type = StatementTrigger.Type.INTERACTION;
+        interaction.clazz = "StepCompleted";
 
         TriggerProcessor.TriggerProcessingResult result = processor.renderTemplateForValidation(
                 interaction,
                 new TestInjectionContext("StepCompleted"));
+        StatementTrigger missing = trigger("""
+                {"missing":["trigger",["NotAParameter"],{"required":false}]}
+                """);
+        missing.type = StatementTrigger.Type.INTERACTION;
+        missing.clazz = "StepCompleted";
 
         assertTrue(result.success());
         assertTrue(result.statement().contains("\"raw\":0.5"));
+        assertFalse(processor.renderTemplateForValidation(
+                missing,
+                new TestInjectionContext("StepCompleted")).success());
     }
 
     @Test
@@ -157,11 +245,27 @@ class ObjectInjectionHandlerTest {
     }
 
     private StatementTrigger trigger(String statement) {
+        return trigger(statement, null);
+    }
+
+    private StatementTrigger trigger(
+            String statement,
+            Expression criteria) {
         StatementTrigger trigger = new StatementTrigger();
         trigger.type = StatementTrigger.Type.OBJECT_UPDATE;
         trigger.clazz = "TrackedEntity";
+        trigger.criteria = criteria;
         trigger.statement = statement;
         return trigger;
+    }
+
+    private ObjectLookup lookup(
+            String className,
+            Expression criteria) {
+        ObjectLookup lookup = new ObjectLookup();
+        lookup.clazz = className;
+        lookup.criteria = criteria;
+        return lookup;
     }
 
     private Target target(Object... parts) {

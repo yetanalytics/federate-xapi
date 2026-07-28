@@ -28,8 +28,8 @@ final class LazyLookupContext {
     }
 
     ValueResolution value(String alias, Target target) {
-        if (injectionContext instanceof TestInjectionContext) {
-            return handler.handleLookup(null, target, injectionContext);
+        if (injectionContext instanceof TestInjectionContext testContext) {
+            return handler.handleLookup(alias, definitions.get(alias), target, testContext);
         }
         return handler.handleLookup(object(alias), target, injectionContext);
     }

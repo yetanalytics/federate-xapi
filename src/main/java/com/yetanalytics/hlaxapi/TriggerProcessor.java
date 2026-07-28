@@ -80,6 +80,9 @@ public class TriggerProcessor {
         StatementTrigger.Type previousTriggerType = context.getTriggerType();
         context.setTriggerType(trigger.type);
         try {
+            if (!evaluateCriteria && context instanceof TestInjectionContext testContext) {
+                injectionHandler.validateCriteriaSources(trigger, testContext);
+            }
             LazyLookupContext lookups = new LazyLookupContext(injectionHandler, context, trigger.lookups);
             if (evaluateCriteria
                     && !new TriggerCriteriaMatcher(injectionHandler).matches(trigger.criteria, context, lookups)) {
