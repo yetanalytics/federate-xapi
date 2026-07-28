@@ -298,8 +298,16 @@ public class InjectionHandler {
     }
 
     private byte[] extractArrayElementBytes(String elementType, int index, byte[] bytes) {
+        if (bytes.length < Integer.BYTES) {
+            logger.warn("Array value is too short to contain an element count");
+            return null;
+        }
         ByteWrapper wrapper = new ByteWrapper(bytes);
         int count = wrapper.getInt();
+        if (count < 0) {
+            logger.warn("Array value contains a negative element count: {}", count);
+            return null;
+        }
         if (index >= count) {
             return null;
         }
@@ -309,7 +317,8 @@ public class InjectionHandler {
             try {
                 element.decode(wrapper);
             } catch (DecoderException e) {
-                throw new IllegalStateException("Failed to decode array element of type " + elementType, e);
+                logger.warn("Problem decoding array element of type {}", elementType, e);
+                return null;
             }
             if (i == index) {
                 try {
@@ -337,8 +346,12 @@ public class InjectionHandler {
             try {
                 element.decode(wrapper);
             } catch (DecoderException e) {
-                throw new IllegalStateException(
-                        "Failed to decode fixed record field " + field.name + " for record " + recordType, e);
+                logger.warn(
+                        "Problem decoding fixed record field {} for record {}",
+                        field.name,
+                        recordType,
+                        e);
+                return null;
             }
             if (field.name.equals(fieldName)) {
                 try {

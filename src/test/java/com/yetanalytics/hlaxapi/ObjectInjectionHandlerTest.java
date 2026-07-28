@@ -85,6 +85,33 @@ class ObjectInjectionHandlerTest {
     }
 
     @Test
+    @SuppressTestLogging({
+        "com.yetanalytics.hlaxapi.InjectionHandler",
+        "com.yetanalytics.hlaxapi.TriggerProcessor"
+    })
+    void optionalMalformedNestedValuesRenderNullForUpdateAndDelete() {
+        TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
+        Map<String, byte[]> malformedAttributes = Map.of(
+                "Position", new byte[] {1},
+                "PositionHistory", new byte[] {0, 0, 0, 1, 1});
+
+        for (StatementTrigger.Type type : List.of(
+                StatementTrigger.Type.OBJECT_UPDATE,
+                StatementTrigger.Type.OBJECT_DELETE)) {
+            assertOptionalMalformedValue(
+                    processor,
+                    type,
+                    "[\"Position\",\"X\"]",
+                    malformedAttributes);
+            assertOptionalMalformedValue(
+                    processor,
+                    type,
+                    "[\"PositionHistory\",0,\"X\"]",
+                    malformedAttributes);
+        }
+    }
+
+    @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
     void validatesEveryObjectEventTargetAgainstInheritedObjectAttributes() {
         TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
@@ -266,6 +293,24 @@ class ObjectInjectionHandlerTest {
         lookup.clazz = className;
         lookup.criteria = criteria;
         return lookup;
+    }
+
+    private void assertOptionalMalformedValue(
+            TriggerProcessor processor,
+            StatementTrigger.Type type,
+            String target,
+            Map<String, byte[]> attributes) {
+        StatementTrigger trigger = trigger("""
+                {"value":["trigger",%s,{"required":false}]}
+                """.formatted(target));
+        trigger.type = type;
+
+        TriggerProcessor.TriggerProcessingResult result = processor.processTrigger(
+                trigger,
+                new ObjectInjectionContext("TrackedEntity", "object-17", attributes));
+
+        assertTrue(result.success(), type + " " + target);
+        assertEquals("{\"value\":null}", result.statement(), type + " " + target);
     }
 
     private Target target(Object... parts) {
