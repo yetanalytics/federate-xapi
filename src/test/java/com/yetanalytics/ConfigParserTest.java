@@ -143,6 +143,32 @@ public class ConfigParserTest {
     }
 
     @Test
+    public void parsesObjectLifecycleTriggerTypes(@TempDir Path tempDir) throws IOException {
+        Path configPath = tempDir.resolve("object-lifecycle-config.json");
+        Files.writeString(configPath, """
+                {
+                  "statementTriggers": [
+                    {"type":"ObjectCreate","class":"Rabbit","statement":{}},
+                    {"type":"objectUpdate","class":"Rabbit","statement":{}},
+                    {"type":"OBJECTDELETE","class":"Rabbit","statement":{}}
+                  ]
+                }
+                """);
+
+        List<StatementTrigger.Type> types = ConfigParser.fromFile(configPath.toString()).parse()
+                .statementTriggers.stream()
+                .map(trigger -> trigger.type)
+                .toList();
+
+        assertEquals(
+                List.of(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        StatementTrigger.Type.OBJECT_DELETE),
+                types);
+    }
+
+    @Test
     public void parsesQueriesAndLookupsInTriggerCriteria(@TempDir Path tempDir) throws IOException {
         Path configPath = tempDir.resolve("xapi-config.json");
         Files.writeString(configPath, """
