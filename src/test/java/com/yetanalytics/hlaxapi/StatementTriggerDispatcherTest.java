@@ -98,6 +98,29 @@ class StatementTriggerDispatcherTest {
         assertEquals(List.of("rabbit-delete"), deleteStatements);
     }
 
+    @Test
+    void objectUpdateForBaseClassMatchesConcreteDescendant() {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity", "sim-entity-update"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "rabbit-update"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Wolf", "wolf-update"));
+        StatementTriggerDispatcher dispatcher =
+                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor());
+        ObjectInjectionContext rabbit =
+                new ObjectInjectionContext("Rabbit", "object-1", Map.of());
+
+        List<String> updateStatements = dispatcher
+                .stage(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", rabbit)
+                .stream()
+                .map(StatementTriggerDispatcher.StagedStatement::statement)
+                .toList();
+
+        assertEquals(
+                List.of("sim-entity-update", "rabbit-update"),
+                updateStatements);
+    }
+
     private StatementTrigger trigger(StatementTrigger.Type type, String className, String statement) {
         StatementTrigger trigger = new StatementTrigger();
         trigger.type = type;
