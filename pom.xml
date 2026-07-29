@@ -88,6 +88,12 @@
             <artifactId>junit-jupiter-params</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.12.0</version>
+            <scope>test</scope>
+        </dependency>
         <!-- Jackson for JSON parsing -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
@@ -127,7 +133,7 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
-            <version>6.1.18</version>
+            <version>6.1.21</version>
         </dependency>
         <!-- xAPI Client -->
         <dependency>
@@ -135,6 +141,32 @@
             <artifactId>xapi-tools</artifactId>
             <version>0.0.6</version>
         </dependency>
+        <!-- AMQ-->
+
+        <!-- Core Spring JMS Support -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jms</artifactId>
+            <version>6.1.21</version>
+        </dependency>
+        <!-- Core ActiveMQ Embedded Broker -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-broker</artifactId>
+            <version>5.18.3</version>
+        </dependency>
+        <!-- Compiler headers for jakarta (fulfilled by AMQ) -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-server</artifactId>
+            <version>2.33.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-client</artifactId>
+            <version>2.33.0</version>
+        </dependency>
+
     </dependencies>
 
     <build>

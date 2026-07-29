@@ -11,6 +11,10 @@ import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jms.core.JmsTemplate;
 
 import com.yetanalytics.extension.SuppressTestLogging;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
@@ -20,10 +24,13 @@ import com.yetanalytics.xapi.client.LRS;
 import com.yetanalytics.xapi.client.StatementClient;
 import com.yetanalytics.xapi.exception.StatementClientException;
 import com.yetanalytics.xapi.model.Statement;
-import com.yetanalytics.xapi.util.Mapper;
 import com.yetanalytics.xapi.util.StatementValidator;
 
+@ExtendWith(MockitoExtension.class)
 class XapiClientTest {
+
+    @Mock
+    JmsTemplate jmsTemplate;
 
     private static final String STATEMENT_JSON = """
             {
@@ -61,7 +68,7 @@ class XapiClientTest {
 
     @Test
     void buffersStatementFromJsonString() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator(), jmsTemplate);
 
         xapiClient.sendStatement(STATEMENT_JSON);
 
@@ -71,14 +78,14 @@ class XapiClientTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void rejectsInvalidStatementJson() {
-        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator(), jmsTemplate);
         assertThrows(StatementValidationException.class, () -> xapiClient.sendStatement("{"));
     }
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void rejectsInvalidStatementXApi() {
-        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator(), jmsTemplate);
 
         try {
             xapiClient.sendStatement(BAD_STATEMENT_JSON);
@@ -90,7 +97,7 @@ class XapiClientTest {
 
     @Test
     void clearBufferPostsBufferedStatementsAndClearsBuffer() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator(), jmsTemplate);
         FakeStatementClient fakeClient = new FakeStatementClient();
         setClient(xapiClient, fakeClient);
 
@@ -105,7 +112,7 @@ class XapiClientTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void clearBufferKeepsStatementsWhenRetryableClientErrorsBeforeMaxRetries() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(4, 2), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(4, 2), new StatementValidator(), jmsTemplate);
         FakeStatementClient fakeClient = new FakeStatementClient();
         fakeClient.failuresRemaining = 1;
         fakeClient.statusCodeToThrow = 503;
@@ -122,7 +129,7 @@ class XapiClientTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void clearBufferMovesBatchToDeadLetterQueueAfterMaxRetries() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator(), jmsTemplate);
         FakeStatementClient fakeClient = new FakeStatementClient();
         fakeClient.failuresRemaining = 2;
         fakeClient.statusCodeToThrow = 503;
@@ -141,7 +148,7 @@ class XapiClientTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void clearBufferReducesBatchSizeOnNonRetryableError() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(4, 1), new StatementValidator(), jmsTemplate);
         FakeStatementClient fakeClient = new FakeStatementClient();
         fakeClient.statusCodeToThrow = 400;
         fakeClient.failuresRemaining = 3;
@@ -178,7 +185,7 @@ class XapiClientTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void clearBufferDeadLettersSingleStatementAfterNonRetryableFailure() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator(), jmsTemplate);
         FakeStatementClient fakeClient = new FakeStatementClient();
         fakeClient.failuresRemaining = 2;
         fakeClient.statusCodeToThrow = 400;
@@ -196,7 +203,7 @@ class XapiClientTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void clearBufferUsesConfiguredBatchSize() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator(), jmsTemplate);
         FakeStatementClient fakeClient = new FakeStatementClient();
         setClient(xapiClient, fakeClient);
 
@@ -212,7 +219,7 @@ class XapiClientTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.XapiClient"})
     void clearBufferMovesFailedStatementsToDeadLetterQueueAfterMaxRetries() throws Exception {
-        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator());
+        XapiClient xapiClient = new XapiClient(config(2, 1), new StatementValidator(), jmsTemplate);
         FakeStatementClient fakeClient = new FakeStatementClient();
         fakeClient.failuresRemaining = 2;
         setClient(xapiClient, fakeClient);

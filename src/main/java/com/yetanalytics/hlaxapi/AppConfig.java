@@ -6,10 +6,17 @@ import hla.rti1516e.exceptions.RTIinternalError;
 
 import java.io.IOException;
 
+import jakarta.jms.ConnectionFactory;
+
+import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
+import org.apache.activemq.artemis.core.config.impl.ConfigurationImpl;
+import org.apache.activemq.artemis.core.server.JournalType;
+import org.apache.activemq.artemis.core.server.embedded.EmbeddedActiveMQ;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jms.core.JmsTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
@@ -86,5 +93,32 @@ public class AppConfig {
             logger.error("Could not read Simulation config: " + path, e);
             throw new RuntimeException(e);
         }
+    }
+
+    /** Broker Stuff */
+
+    //TODO: Make optional, only if no broker is provided in the config.
+    @Bean(initMethod = "start", destroyMethod = "stop")
+    public EmbeddedActiveMQ embeddedServer() throws Exception {
+        EmbeddedActiveMQ server = new EmbeddedActiveMQ();
+        org.apache.activemq.artemis.core.config.Configuration config = new ConfigurationImpl()
+            .setPersistenceEnabled(false)
+            .setSecurityEnabled(false)
+            .setJournalType(JournalType.NIO)
+            .addAcceptorConfiguration("in-vm", "vm://0");
+
+        server.setConfiguration(config);
+        return server;
+    }
+
+    @Bean
+    public ConnectionFactory jmsConnectionFactory() {
+        // Artemis specific Jakarta factory
+        return new ActiveMQConnectionFactory("vm://0");
+    }
+
+    @Bean
+    public JmsTemplate jmsTemplate(ConnectionFactory jmsConnectionFactory) {
+        return new JmsTemplate(jmsConnectionFactory);
     }
 }
