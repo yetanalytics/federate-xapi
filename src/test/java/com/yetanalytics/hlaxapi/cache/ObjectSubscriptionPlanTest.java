@@ -53,4 +53,29 @@ class ObjectSubscriptionPlanTest {
                 UnsupportedOperationException.class,
                 () -> plan.subscriptions().get("Rabbit").add("EntityId"));
     }
+
+    @Test
+    void subscribesDescendantsToPreserveExactLifecycleClassIdentity() {
+        StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.OBJECT_UPDATE;
+        trigger.clazz = "SimEntity";
+        trigger.statement = "{}";
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(trigger);
+
+        ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
+        Set<String> simEntityAttributes =
+                Set.copyOf(catalog.objectClass("SimEntity").orElseThrow().topLevelAttributeNames());
+
+        assertEquals(Set.of("SimEntity"), plan.eventSubscriptions().keySet());
+        assertEquals(simEntityAttributes, plan.eventSubscriptions().get("SimEntity"));
+        assertEquals(
+                Set.of("Carrot", "Rabbit", "Wolf"),
+                plan.identificationSubscriptions().keySet());
+        assertEquals(simEntityAttributes, plan.identificationSubscriptions().get("Carrot"));
+        assertEquals(simEntityAttributes, plan.identificationSubscriptions().get("Rabbit"));
+        assertEquals(simEntityAttributes, plan.identificationSubscriptions().get("Wolf"));
+        assertEquals(simEntityAttributes, plan.subscriptions().get("SimEntity"));
+        assertEquals(simEntityAttributes, plan.subscriptions().get("Rabbit"));
+    }
 }

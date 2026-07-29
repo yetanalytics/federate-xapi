@@ -5,6 +5,7 @@ import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.TrackedObject;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -16,18 +17,22 @@ final class ObjectSubscriptionPlan {
     private final FomCatalog catalog;
     private final Map<String, Set<String>> cacheSubscriptions;
     private final Map<String, Set<String>> eventSubscriptions;
+    private final Map<String, Set<String>> identificationSubscriptions;
     private final Map<String, Set<String>> subscriptions;
 
     private ObjectSubscriptionPlan(
             FomCatalog catalog,
             Map<String, Set<String>> cacheSubscriptions,
-            Map<String, Set<String>> eventSubscriptions) {
+            Map<String, Set<String>> eventSubscriptions,
+            Map<String, Set<String>> identificationSubscriptions) {
         this.catalog = catalog;
         this.cacheSubscriptions = copySubscriptions(cacheSubscriptions);
         this.eventSubscriptions = copySubscriptions(eventSubscriptions);
+        this.identificationSubscriptions = copySubscriptions(identificationSubscriptions);
         this.subscriptions = mergeSubscriptions(
                 this.cacheSubscriptions,
-                this.eventSubscriptions);
+                this.eventSubscriptions,
+                this.identificationSubscriptions);
     }
 
     static ObjectSubscriptionPlan from(XapiConfig xapiConfig, FomCatalog catalog) {
@@ -37,7 +42,13 @@ final class ObjectSubscriptionPlan {
                 collectCacheSubscriptions(xapiConfig, catalog);
         Map<String, Set<String>> eventSubscriptions =
                 collectEventSubscriptions(xapiConfig, catalog);
-        return new ObjectSubscriptionPlan(catalog, cacheSubscriptions, eventSubscriptions);
+        Map<String, Set<String>> identificationSubscriptions =
+                collectIdentificationSubscriptions(xapiConfig, catalog);
+        return new ObjectSubscriptionPlan(
+                catalog,
+                cacheSubscriptions,
+                eventSubscriptions,
+                identificationSubscriptions);
     }
 
     Map<String, Set<String>> cacheSubscriptions() {
@@ -46,6 +57,10 @@ final class ObjectSubscriptionPlan {
 
     Map<String, Set<String>> eventSubscriptions() {
         return eventSubscriptions;
+    }
+
+    Map<String, Set<String>> identificationSubscriptions() {
+        return identificationSubscriptions;
     }
 
     Map<String, Set<String>> subscriptions() {
@@ -114,6 +129,41 @@ final class ObjectSubscriptionPlan {
             }
         }
         return events;
+    }
+
+    /**
+     * Subscribe to every descendant of a configured lifecycle class so the RTI
+     * reports an object's most-specific subscribed class. Without these
+     * subscriptions, a derived object can be discovered as its subscribed
+     * ancestor and incorrectly match an exact-class trigger.
+     */
+    private static Map<String, Set<String>> collectIdentificationSubscriptions(
+            XapiConfig xapiConfig,
+            FomCatalog catalog) {
+        Map<String, Set<String>> identification = new LinkedHashMap<>();
+        if (xapiConfig.statementTriggers == null) {
+            return identification;
+        }
+        for (StatementTrigger trigger : xapiConfig.statementTriggers) {
+            if (trigger == null
+                    || trigger.type == null
+                    || !trigger.type.isObjectEvent()
+                    || trigger.clazz == null
+                    || trigger.clazz.isBlank()) {
+                continue;
+            }
+            catalog.objectClass(trigger.clazz).ifPresent(configuredClass -> {
+                List<String> attributes = configuredClass.topLevelAttributeNames();
+                if (attributes.isEmpty()) {
+                    return;
+                }
+                catalog.objectClassAndDescendants(configuredClass.localName()).stream()
+                        .filter(candidate -> !candidate.localName().equals(configuredClass.localName()))
+                        .forEach(descendant ->
+                                addAttributes(identification, descendant.localName(), attributes));
+            });
+        }
+        return identification;
     }
 
     private static void addObjectDeleteTriggers(

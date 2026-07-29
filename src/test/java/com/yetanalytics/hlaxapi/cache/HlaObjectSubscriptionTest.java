@@ -104,6 +104,42 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    void ancestorTriggerSubscribesDescendantsWithoutMatchingTheirReflections() throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(objectUpdateTrigger("SimEntity"));
+        Set<String> expectedAttributes =
+                Set.copyOf(catalog.objectClass("SimEntity").orElseThrow().topLevelAttributeNames());
+
+        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient);
+
+            subscribeObjectClasses(hlaInterface);
+
+            assertEquals(4, rti.subscriptions.size());
+            assertEquals(
+                    Set.of("SimEntity", "Carrot", "Rabbit", "Wolf"),
+                    rti.subscriptions.stream()
+                            .map(ObjectSubscription::className)
+                            .collect(java.util.stream.Collectors.toSet()));
+            assertTrue(rti.subscriptions.stream()
+                    .allMatch(subscription -> subscription.attributes().equals(expectedAttributes)));
+
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(108);
+            reflect(
+                    hlaInterface,
+                    rabbit,
+                    rti.attributeHandle(rabbitClass, "Hunger"),
+                    12);
+
+            assertTrue(xapiClient.statements.isEmpty());
+        }
+    }
+
+    @Test
     void firstReflectionDispatchesObjectCreateAndObjectUpdateThenOnlyUpdates() throws Exception {
         StatementTrigger create = objectTrigger(
                 StatementTrigger.Type.OBJECT_CREATE,
