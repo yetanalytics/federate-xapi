@@ -73,6 +73,17 @@ class FomCatalogTest {
     }
 
     @Test
+    void calculatesObjectClassDepthFromKnownFomAncestors() {
+        FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
+
+        assertEquals(1, catalog.objectClassDepth("SimEntity"));
+        assertEquals(2, catalog.objectClassDepth("Carrot"));
+        assertEquals(2, catalog.objectClassDepth("Rabbit"));
+        assertEquals(2, catalog.objectClassDepth("Wolf"));
+        assertEquals(-1, catalog.objectClassDepth("MissingObject"));
+    }
+
+    @Test
     void fomXmlReturnsHierarchyWithDeclaredAttributes() {
         FOMXML fomXml = fomXml("config/HlaFedereplFOM.xml");
 

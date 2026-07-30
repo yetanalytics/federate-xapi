@@ -77,6 +77,22 @@ public final class FomCatalog {
                 && isSameOrDescendant(actualClass, configuredClass);
     }
 
+    /**
+     * Returns the number of known FOM ancestors for an object class, or -1 when
+     * the class is unknown.
+     */
+    public int objectClassDepth(String className) {
+        ObjectClassDef current = objectClass(className).orElse(null);
+        if (current == null) {
+            return -1;
+        }
+        int depth = 0;
+        while ((current = classesByName.get(current.parentName())) != null) {
+            depth++;
+        }
+        return depth;
+    }
+
     public Optional<FomAttribute> attribute(int id) {
         return Optional.ofNullable(attributesById.get(id));
     }

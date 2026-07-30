@@ -4,6 +4,7 @@ import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -233,7 +234,14 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         if (!objectCache.hasSubscriptions()) {
             return;
         }
-        for (Map.Entry<String, Set<String>> subscription : objectCache.subscriptions().entrySet()) {
+        List<Map.Entry<String, Set<String>>> subscriptions =
+                new ArrayList<>(objectCache.subscriptions().entrySet());
+        subscriptions.sort(Comparator
+                .<Map.Entry<String, Set<String>>>comparingInt(subscription ->
+                        objectCache.catalog().objectClassDepth(subscription.getKey()))
+                .reversed()
+                .thenComparing(Map.Entry::getKey));
+        for (Map.Entry<String, Set<String>> subscription : subscriptions) {
             try {
                 FomCatalog.ObjectClassDef clazz = objectCache.catalog().objectClass(subscription.getKey()).orElseThrow(
                         () -> new IllegalArgumentException("No FOM object class " + subscription.getKey()));
