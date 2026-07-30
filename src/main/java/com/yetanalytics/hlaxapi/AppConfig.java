@@ -1,17 +1,11 @@
 package com.yetanalytics.hlaxapi;
 
-import hla.rti1516e.RtiFactory;
-import hla.rti1516e.RtiFactoryFactory;
-import hla.rti1516e.exceptions.RTIinternalError;
-
 import java.io.IOException;
 
-import jakarta.jms.ConnectionFactory;
-
-import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.activemq.artemis.core.config.impl.ConfigurationImpl;
 import org.apache.activemq.artemis.core.server.JournalType;
 import org.apache.activemq.artemis.core.server.embedded.EmbeddedActiveMQ;
+import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.annotation.Bean;
@@ -21,7 +15,6 @@ import org.springframework.jms.connection.JmsTransactionManager;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
@@ -30,7 +23,11 @@ import com.yetanalytics.hlaxapi.config.ConfigParser;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.xapi.util.StatementValidator;
 
+import hla.rti1516e.RtiFactory;
+import hla.rti1516e.RtiFactoryFactory;
 import hla.rti1516e.encoding.EncoderFactory;
+import hla.rti1516e.exceptions.RTIinternalError;
+import jakarta.jms.ConnectionFactory;
 
 
 /**
@@ -38,7 +35,6 @@ import hla.rti1516e.encoding.EncoderFactory;
  */
 @Configuration
 @EnableScheduling
-@EnableTransactionManagement
 public class AppConfig {
 
     private static final Logger logger = LogManager.getLogger(AppConfig.class);
