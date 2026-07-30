@@ -139,7 +139,7 @@
         <dependency>
             <groupId>com.yetanalytics</groupId>
             <artifactId>xapi-tools</artifactId>
-            <version>0.0.6</version>
+            <version>0.0.7</version>
             <exclusions>
                 <exclusion>
                     <groupId>ch.qos.logback</groupId>

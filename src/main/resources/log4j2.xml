@@ -10,7 +10,7 @@
         <Logger name="org.apache.activemq" level="WARN"/>
         <Logger name="org.jboss.logging" level="WARN"/>
         <Logger name="org.jboss.logmanager" level="WARN"/>
-        <Root level="WARN">
+        <Root level="INFO">
             <AppenderRef ref="Console"/>
         </Root>
     </Loggers>

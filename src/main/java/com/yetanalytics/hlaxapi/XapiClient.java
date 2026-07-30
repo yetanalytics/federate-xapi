@@ -190,7 +190,7 @@ public class XapiClient {
         });
     }
 
-    private static class FailedStatement {
+    private static class FailedStatement implements java.io.Serializable {
         private final Statement statement;
 
         private final String originalStatementString;
