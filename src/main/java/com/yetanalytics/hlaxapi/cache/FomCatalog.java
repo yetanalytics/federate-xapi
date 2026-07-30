@@ -65,6 +65,18 @@ public final class FomCatalog {
                 .toList();
     }
 
+    /**
+     * Returns whether the actual object class is the configured class or one of
+     * its FOM descendants.
+     */
+    public boolean isSameOrDescendant(String actualClassName, String configuredClassName) {
+        ObjectClassDef actualClass = objectClass(actualClassName).orElse(null);
+        ObjectClassDef configuredClass = objectClass(configuredClassName).orElse(null);
+        return actualClass != null
+                && configuredClass != null
+                && isSameOrDescendant(actualClass, configuredClass);
+    }
+
     public Optional<FomAttribute> attribute(int id) {
         return Optional.ofNullable(attributesById.get(id));
     }

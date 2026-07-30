@@ -33,7 +33,8 @@ class HlaInteractionDispatchTest {
         InjectionHandler injectionHandler = new InjectionHandler();
         injectionHandler.setFomXml(fomXml);
         injectionHandler.setHLADecoderRegistry(decoderRegistry);
-        injectionHandler.setFomCatalog(new FomCatalog(fomXml));
+        FomCatalog catalog = new FomCatalog(fomXml);
+        injectionHandler.setFomCatalog(catalog);
         StatementTrigger trigger = new StatementTrigger();
         trigger.type = StatementTrigger.Type.INTERACTION;
         trigger.clazz = "StepCompleted";
@@ -59,7 +60,10 @@ class HlaInteractionDispatchTest {
         setField(
                 hlaInterface,
                 "triggerDispatcher",
-                new StatementTriggerDispatcher(config, new TriggerProcessor(injectionHandler)));
+                new StatementTriggerDispatcher(
+                        config,
+                        new TriggerProcessor(injectionHandler),
+                        catalog));
         setField(hlaInterface, "xapiClient", xapiClient);
         ParameterHandleValueMap parameters = new HLA1516eParameterHandleValueMap();
         parameters.put(stepNumber, HLAEncodingTestSupport.int32(42, ByteOrder.BIG_ENDIAN));

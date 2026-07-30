@@ -61,6 +61,18 @@ class FomCatalogTest {
     }
 
     @Test
+    void matchesObjectClassesThroughTheirFomHierarchy() {
+        FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
+
+        assertTrue(catalog.isSameOrDescendant("Rabbit", "Rabbit"));
+        assertTrue(catalog.isSameOrDescendant("Rabbit", "SimEntity"));
+        assertFalse(catalog.isSameOrDescendant("SimEntity", "Rabbit"));
+        assertFalse(catalog.isSameOrDescendant("Wolf", "Rabbit"));
+        assertFalse(catalog.isSameOrDescendant("MissingObject", "SimEntity"));
+        assertFalse(catalog.isSameOrDescendant("Rabbit", "MissingObject"));
+    }
+
+    @Test
     void fomXmlReturnsHierarchyWithDeclaredAttributes() {
         FOMXML fomXml = fomXml("config/HlaFedereplFOM.xml");
 

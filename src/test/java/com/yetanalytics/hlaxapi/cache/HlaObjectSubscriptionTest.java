@@ -1011,7 +1011,10 @@ class HlaObjectSubscriptionTest {
         setField(
                 hlaInterface,
                 "triggerDispatcher",
-                new StatementTriggerDispatcher(config, new TriggerProcessor(injectionHandler)));
+                new StatementTriggerDispatcher(
+                        config,
+                        new TriggerProcessor(injectionHandler),
+                        catalog));
         setField(hlaInterface, "xapiClient", xapiClient);
         return hlaInterface;
     }
