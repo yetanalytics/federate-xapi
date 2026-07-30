@@ -985,7 +985,9 @@ class HlaObjectSubscriptionTest {
             hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Inherited");
 
             assertEquals(Set.of("FirstName"), cache.subscriptions().get("SimEntity"));
-            assertEquals(Set.of("Hunger"), cache.subscriptions().get("Rabbit"));
+            assertEquals(Set.of("FirstName"), cache.subscriptions().get("Carrot"));
+            assertEquals(Set.of("FirstName", "Hunger"), cache.subscriptions().get("Rabbit"));
+            assertEquals(Set.of("FirstName"), cache.subscriptions().get("Wolf"));
             assertEquals(Set.of("FirstName", "Hunger"), rti.requests.get(0).attributes());
         }
     }
