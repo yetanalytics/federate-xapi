@@ -16,11 +16,13 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jms.connection.CachingConnectionFactory;
 import org.springframework.jms.connection.JmsTransactionManager;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
@@ -104,6 +106,8 @@ public class AppConfig {
     //TODO: Make optional, only if no broker is provided in the config.
     @Bean(initMethod = "start", destroyMethod = "stop")
     public EmbeddedActiveMQ embeddedServer() throws Exception {
+        System.setProperty("org.jboss.logging.provider", "slf4j");
+        System.setProperty("java.util.logging.manager", "org.apache.logging.log4j.jul.LogManager");
         EmbeddedActiveMQ server = new EmbeddedActiveMQ();
         org.apache.activemq.artemis.core.config.Configuration config = new ConfigurationImpl()
             .setPersistenceEnabled(false)
@@ -118,7 +122,16 @@ public class AppConfig {
     @Bean
     public ConnectionFactory jmsConnectionFactory() {
         // Artemis specific Jakarta factory
-        return new ActiveMQConnectionFactory("vm://0");
+        ActiveMQConnectionFactory rawFactory = new ActiveMQConnectionFactory("vm://0");
+        rawFactory.setConsumerWindowSize(0); // strict FIFO
+
+        // Wrap the raw factory to cache connections and sessions
+        CachingConnectionFactory cachingFactory = new CachingConnectionFactory(rawFactory);
+        // Crucial: must be false for variable batch pooling logic to work correctly
+        cachingFactory.setCacheConsumers(false);
+        cachingFactory.setSessionCacheSize(10);
+
+        return cachingFactory;
     }
 
     @Bean
@@ -132,5 +145,11 @@ public class AppConfig {
     public PlatformTransactionManager transactionManager(ConnectionFactory connectionFactory) {
         // Spring automatically pairs this manager with @Transactional when processing JMS
         return new JmsTransactionManager(connectionFactory);
+    }
+
+    @Bean
+    @SuppressWarnings("null")
+    public TransactionTemplate transactionTemplate(PlatformTransactionManager transactionManager) {
+        return new TransactionTemplate(transactionManager);
     }
 }
