@@ -148,6 +148,101 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    void concreteLifecycleCallbacksDispatchEachMatchingAncestorAndConcreteTriggerOnce(
+            @TempDir Path tempDir) throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        "SimEntity",
+                        "{\"event\":\"sim-entity-create\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        "Rabbit",
+                        "{\"event\":\"rabbit-create\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        "Wolf",
+                        "{\"event\":\"wolf-create\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        "SimEntity",
+                        "{\"event\":\"sim-entity-update\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        "Rabbit",
+                        "{\"event\":\"rabbit-update\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        "Wolf",
+                        "{\"event\":\"wolf-update\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_DELETE,
+                        "SimEntity",
+                        "{\"event\":\"sim-entity-delete\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_DELETE,
+                        "Rabbit",
+                        "{\"event\":\"rabbit-delete\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_DELETE,
+                        "Wolf",
+                        "{\"event\":\"wolf-delete\"}"));
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("polymorphic-lifecycle.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface = hlaInterface(
+                    cache,
+                    rti.proxy(),
+                    config,
+                    xapiClient,
+                    injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(109);
+            AttributeHandleValueMap firstReflection = new HLA1516eAttributeHandleValueMap();
+            firstReflection.put(
+                    rti.attributeHandle(rabbitClass, "EntityId"),
+                    HLAEncodingTestSupport.asciiString("rabbit-polymorphic"));
+            firstReflection.put(
+                    rti.attributeHandle(rabbitClass, "Hunger"),
+                    HLAEncodingTestSupport.int32(12, ByteOrder.BIG_ENDIAN));
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Polymorphic");
+            hlaInterface.reflectAttributeValues(
+                    rabbit,
+                    firstReflection,
+                    null,
+                    null,
+                    null,
+                    null);
+            reflect(
+                    hlaInterface,
+                    rabbit,
+                    rti.attributeHandle(rabbitClass, "Hunger"),
+                    13);
+            hlaInterface.removeObjectInstance(rabbit, null, null, null);
+
+            assertEquals(
+                    List.of(
+                            "{\"event\":\"sim-entity-create\"}",
+                            "{\"event\":\"rabbit-create\"}",
+                            "{\"event\":\"sim-entity-update\"}",
+                            "{\"event\":\"rabbit-update\"}",
+                            "{\"event\":\"sim-entity-update\"}",
+                            "{\"event\":\"rabbit-update\"}",
+                            "{\"event\":\"sim-entity-delete\"}",
+                            "{\"event\":\"rabbit-delete\"}"),
+                    xapiClient.statements);
+        }
+    }
+
+    @Test
     void emptyReflectionDoesNotDispatchCacheOrConsumePendingCreate() throws Exception {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(

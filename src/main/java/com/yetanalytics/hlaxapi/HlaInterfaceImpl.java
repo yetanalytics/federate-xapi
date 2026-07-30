@@ -280,7 +280,9 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         if (subscribedAttributes.isEmpty()) {
             return;
         }
-        if (hasObjectCreateTrigger(className)) {
+        if (triggerDispatcher.hasMatchingTrigger(
+                StatementTrigger.Type.OBJECT_CREATE,
+                className)) {
             pendingObjectCreates.put(theObject.toString(), className);
         }
         if (objectCache.isEnabled()) {
@@ -302,16 +304,6 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 | SaveInProgress | RestoreInProgress | NotConnected | RTIinternalError | RuntimeException e) {
             logger.error("Error requesting values for discovered object {}", objectName, e);
         }
-    }
-
-    private boolean hasObjectCreateTrigger(String className) {
-        if (xapiConfig == null || xapiConfig.statementTriggers == null) {
-            return false;
-        }
-        return xapiConfig.statementTriggers.stream()
-                .anyMatch(trigger -> trigger != null
-                        && trigger.type == StatementTrigger.Type.OBJECT_CREATE
-                        && className.equals(trigger.clazz));
     }
 
     private AttributeHandleSet attributeHandles(

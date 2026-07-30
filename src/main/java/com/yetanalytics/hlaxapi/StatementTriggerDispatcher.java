@@ -40,9 +40,7 @@ public class StatementTriggerDispatcher {
         }
         List<StagedStatement> statements = new ArrayList<>();
         for (StatementTrigger trigger : xapiConfig.statementTriggers) {
-            if (trigger == null
-                    || trigger.type != eventType
-                    || !matchesClass(eventType, trigger.clazz, hlaClass)) {
+            if (!matchesTrigger(trigger, eventType, hlaClass)) {
                 continue;
             }
             try {
@@ -60,6 +58,25 @@ public class StatementTriggerDispatcher {
             }
         }
         return List.copyOf(statements);
+    }
+
+    public boolean hasMatchingTrigger(
+            StatementTrigger.Type eventType,
+            String hlaClass) {
+        if (xapiConfig.statementTriggers == null) {
+            return false;
+        }
+        return xapiConfig.statementTriggers.stream()
+                .anyMatch(trigger -> matchesTrigger(trigger, eventType, hlaClass));
+    }
+
+    private boolean matchesTrigger(
+            StatementTrigger trigger,
+            StatementTrigger.Type eventType,
+            String hlaClass) {
+        return trigger != null
+                && trigger.type == eventType
+                && matchesClass(eventType, trigger.clazz, hlaClass);
     }
 
     private boolean matchesClass(
