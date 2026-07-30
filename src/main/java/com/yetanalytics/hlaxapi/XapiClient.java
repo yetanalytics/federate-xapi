@@ -9,6 +9,8 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.exception.StatementValidationException;
@@ -44,7 +46,8 @@ public class XapiClient {
     private static final String DEAD_LETTER_QUEUE = "dlq.xapi.statements";
     private static final String STATEMENT_QUEUE = "xapi.statements";
 
-    public XapiClient(XapiConfig xapiConfig, StatementValidator validator, JmsTemplate jmsTemplate) {
+    public XapiClient(XapiConfig xapiConfig, StatementValidator validator, JmsTemplate jmsTemplate, 
+            TransactionTemplate transactionTemplate) {
         this.validator = validator;
         this.jmsTemplate = jmsTemplate;
         LRS lrs = new LRS(
@@ -133,6 +136,7 @@ public class XapiClient {
         }
     }
 
+    @Transactional
     private BatchResult processBatch(Integer size) throws StatementClientException {
 
         List<PendingStatement> batch = new ArrayList<>();
@@ -165,13 +169,14 @@ public class XapiClient {
         }
     }
 
-    private void deadLetterFromQueue(Integer amount, Throwable cause) {
+    @Transactional
+    private void deadLetterFromQueue(Integer amount, Throwable failureCause) {
         for (int i = 0; i < amount; i++) {
             PendingStatement pendingStmt = (PendingStatement) jmsTemplate.receiveAndConvert(STATEMENT_QUEUE);
             if (pendingStmt == null) {
                 break;
             }
-            PendingStatement dlqStmt = new PendingStatement(pendingStmt.statement, cause);
+            PendingStatement dlqStmt = new PendingStatement(pendingStmt.statement, failureCause);
             jmsTemplate.convertAndSend("dlq.xapi.statements", dlqStmt);
         }
     }
@@ -207,7 +212,7 @@ public class XapiClient {
     private static class PendingStatement {
         private final Statement statement;
 
-        private Throwable cause;
+        private Throwable failureCause;
 
         private PendingStatement(Statement statement) {
             this.statement = statement;
@@ -215,7 +220,7 @@ public class XapiClient {
 
         private PendingStatement(Statement statement, Throwable cause) {
             this.statement = statement;
-            this.cause = cause;
+            this.failureCause = cause;
         }
     }
 

@@ -16,8 +16,11 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jms.connection.JmsTransactionManager;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
@@ -33,6 +36,7 @@ import hla.rti1516e.encoding.EncoderFactory;
  */
 @Configuration
 @EnableScheduling
+@EnableTransactionManagement
 public class AppConfig {
 
     private static final Logger logger = LogManager.getLogger(AppConfig.class);
@@ -118,7 +122,15 @@ public class AppConfig {
     }
 
     @Bean
+    @SuppressWarnings("null")
     public JmsTemplate jmsTemplate(ConnectionFactory jmsConnectionFactory) {
         return new JmsTemplate(jmsConnectionFactory);
+    }
+
+    @Bean
+    @SuppressWarnings("null")
+    public PlatformTransactionManager transactionManager(ConnectionFactory connectionFactory) {
+        // Spring automatically pairs this manager with @Transactional when processing JMS
+        return new JmsTransactionManager(connectionFactory);
     }
 }
