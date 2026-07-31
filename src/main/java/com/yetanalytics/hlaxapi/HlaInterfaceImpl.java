@@ -245,7 +245,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             try {
                 FomCatalog.ObjectClassDef clazz = objectCache.catalog().objectClass(subscription.getKey()).orElseThrow(
                         () -> new IllegalArgumentException("No FOM object class " + subscription.getKey()));
-                ObjectClassHandle classHandle = ambassador.getObjectClassHandle(clazz.localName());
+                ObjectClassHandle classHandle = ambassador.getObjectClassHandle(clazz.hlaName());
                 AttributeHandleSet attributeHandles =
                         attributeHandles(classHandle, subscription.getValue());
                 if (attributeHandles.isEmpty()) {

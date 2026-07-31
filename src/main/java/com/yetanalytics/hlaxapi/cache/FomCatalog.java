@@ -219,6 +219,13 @@ public final class FomCatalog {
         }
 
         private void addObjectClass(FOMXML.ObjectClassDefinition definition) {
+            String localClassName = localName(definition.name());
+            String localParentName = localName(definition.parentName());
+            ObjectClassDef parentClass = classesByName.get(localParentName);
+            String hlaName = parentClass == null || "HLAobjectRoot".equals(parentClass.localName())
+                    ? localClassName
+                    : parentClass.hlaName() + "." + localClassName;
+
             List<AttributeSource> allAttributes = new ArrayList<>();
             if (definition.parentName() != null) {
                 allAttributes.addAll(attributesByClassName.getOrDefault(definition.parentName(), List.of()));
@@ -237,9 +244,9 @@ public final class FomCatalog {
             ObjectClassDef classDef =
                     new ObjectClassDef(
                             classId,
-                            definition.name(),
-                            localName(definition.name()),
-                            localName(definition.parentName()),
+                            hlaName,
+                            localClassName,
+                            localParentName,
                             flattened);
             classesByName.put(classDef.localName(), classDef);
         }

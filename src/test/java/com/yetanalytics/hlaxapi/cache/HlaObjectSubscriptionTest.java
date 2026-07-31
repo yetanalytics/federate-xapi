@@ -1019,6 +1019,13 @@ class HlaObjectSubscriptionTest {
                     rti.subscriptions.stream()
                             .map(ObjectSubscription::className)
                             .toList());
+            assertEquals(
+                    List.of(
+                            "SimEntity.Carrot",
+                            "SimEntity.Rabbit",
+                            "SimEntity.Wolf",
+                            "SimEntity"),
+                    rti.objectClassHandleLookups);
             assertTrue(rti.subscriptions.stream()
                     .allMatch(subscription ->
                             subscription.attributes().equals(Set.of("EntityId"))));
@@ -1363,6 +1370,7 @@ class HlaObjectSubscriptionTest {
 
         private final Map<String, ObjectClassHandle> classes = new LinkedHashMap<>();
         private final Map<ObjectClassHandle, String> classNames = new LinkedHashMap<>();
+        private final List<String> objectClassHandleLookups = new ArrayList<>();
         private final Map<String, AttributeHandle> attributes = new LinkedHashMap<>();
         private final Map<AttributeHandle, String> attributeNames = new LinkedHashMap<>();
         private final List<ObjectSubscription> subscriptions = new ArrayList<>();
@@ -1382,6 +1390,7 @@ class HlaObjectSubscriptionTest {
         }
 
         private ObjectClassHandle classHandle(String className) {
+            className = className.substring(className.lastIndexOf('.') + 1);
             ObjectClassHandle handle = classes.computeIfAbsent(
                     className,
                     ignored -> (ObjectClassHandle) new HLA1516eHandle(nextClassHandle++));
@@ -1406,7 +1415,10 @@ class HlaObjectSubscriptionTest {
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             return switch (method.getName()) {
-                case "getObjectClassHandle" -> classHandle((String) args[0]);
+                case "getObjectClassHandle" -> {
+                    objectClassHandleLookups.add((String) args[0]);
+                    yield classHandle((String) args[0]);
+                }
                 case "getObjectClassName" -> qualifiedClassName(classNames.get(args[0]));
                 case "getAttributeHandleSetFactory" -> new HLA1516eAttributeHandleSetFactory();
                 case "getAttributeHandle" -> attributeHandle((ObjectClassHandle) args[0], (String) args[1]);

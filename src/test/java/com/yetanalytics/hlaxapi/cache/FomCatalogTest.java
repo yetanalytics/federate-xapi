@@ -84,6 +84,17 @@ class FomCatalogTest {
     }
 
     @Test
+    void buildsRtiObjectClassNamesRelativeToHlaObjectRoot() {
+        FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
+
+        assertEquals("HLAobjectRoot", catalog.objectClass("HLAobjectRoot").orElseThrow().hlaName());
+        assertEquals("SimEntity", catalog.objectClass("SimEntity").orElseThrow().hlaName());
+        assertEquals("SimEntity.Carrot", catalog.objectClass("Carrot").orElseThrow().hlaName());
+        assertEquals("SimEntity.Rabbit", catalog.objectClass("Rabbit").orElseThrow().hlaName());
+        assertEquals("SimEntity.Wolf", catalog.objectClass("Wolf").orElseThrow().hlaName());
+    }
+
+    @Test
     void fomXmlReturnsHierarchyWithDeclaredAttributes() {
         FOMXML fomXml = fomXml("config/HlaFedereplFOM.xml");
 
