@@ -19,6 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
+import com.yetanalytics.hlaxapi.config.BrokerConfiguration;
 import com.yetanalytics.hlaxapi.config.ConfigParser;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.xapi.util.StatementValidator;
@@ -99,9 +100,7 @@ public class AppConfig {
 
     /** Broker Stuff */
 
-    //TODO: Make optional, only if no broker is provided in the config.
-    @Bean(initMethod = "start", destroyMethod = "stop")
-    public EmbeddedActiveMQ embeddedServer() throws Exception {
+    public void startEmbeddedArtemisServer() throws Exception {
         System.setProperty("org.jboss.logging.provider", "slf4j");
         System.setProperty("java.util.logging.manager", "org.apache.logging.log4j.jul.LogManager");
         EmbeddedActiveMQ server = new EmbeddedActiveMQ();
@@ -110,15 +109,30 @@ public class AppConfig {
             .setSecurityEnabled(false)
             .setJournalType(JournalType.NIO)
             .addAcceptorConfiguration("in-vm", "vm://0");
-
         server.setConfiguration(config);
-        return server;
+        server.start();
     }
 
     @Bean
     public ConnectionFactory jmsConnectionFactory() {
+
+        BrokerConfiguration brokerConfig = BrokerConfiguration.from(System.getenv());
+
+        if (brokerConfig.embedded) {
+            try {
+                startEmbeddedArtemisServer();
+            } catch (Exception e) {
+                logger.error("Could not start embedded broker", e);
+                throw new RuntimeException(e);
+            }
+        }
+
         // Artemis specific Jakarta factory
-        ActiveMQConnectionFactory rawFactory = new ActiveMQConnectionFactory("vm://0");
+        ActiveMQConnectionFactory rawFactory = new ActiveMQConnectionFactory(
+                brokerConfig.brokerUrl,
+                brokerConfig.username,
+                brokerConfig.password
+        );
         rawFactory.setConsumerWindowSize(0); // strict FIFO
 
         // Wrap the raw factory to cache connections and sessions
