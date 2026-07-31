@@ -148,6 +148,101 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    void concreteLifecycleCallbacksDispatchEachMatchingAncestorAndConcreteTriggerOnce(
+            @TempDir Path tempDir) throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        "SimEntity",
+                        "{\"event\":\"sim-entity-create\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        "Rabbit",
+                        "{\"event\":\"rabbit-create\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        "Wolf",
+                        "{\"event\":\"wolf-create\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        "SimEntity",
+                        "{\"event\":\"sim-entity-update\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        "Rabbit",
+                        "{\"event\":\"rabbit-update\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        "Wolf",
+                        "{\"event\":\"wolf-update\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_DELETE,
+                        "SimEntity",
+                        "{\"event\":\"sim-entity-delete\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_DELETE,
+                        "Rabbit",
+                        "{\"event\":\"rabbit-delete\"}"),
+                objectTrigger(
+                        StatementTrigger.Type.OBJECT_DELETE,
+                        "Wolf",
+                        "{\"event\":\"wolf-delete\"}"));
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("polymorphic-lifecycle.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface = hlaInterface(
+                    cache,
+                    rti.proxy(),
+                    config,
+                    xapiClient,
+                    injectionHandler(cache));
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(109);
+            AttributeHandleValueMap firstReflection = new HLA1516eAttributeHandleValueMap();
+            firstReflection.put(
+                    rti.attributeHandle(rabbitClass, "EntityId"),
+                    HLAEncodingTestSupport.asciiString("rabbit-polymorphic"));
+            firstReflection.put(
+                    rti.attributeHandle(rabbitClass, "Hunger"),
+                    HLAEncodingTestSupport.int32(12, ByteOrder.BIG_ENDIAN));
+
+            hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Polymorphic");
+            hlaInterface.reflectAttributeValues(
+                    rabbit,
+                    firstReflection,
+                    null,
+                    null,
+                    null,
+                    null);
+            reflect(
+                    hlaInterface,
+                    rabbit,
+                    rti.attributeHandle(rabbitClass, "Hunger"),
+                    13);
+            hlaInterface.removeObjectInstance(rabbit, null, null, null);
+
+            assertEquals(
+                    List.of(
+                            "{\"event\":\"sim-entity-create\"}",
+                            "{\"event\":\"rabbit-create\"}",
+                            "{\"event\":\"sim-entity-update\"}",
+                            "{\"event\":\"rabbit-update\"}",
+                            "{\"event\":\"sim-entity-update\"}",
+                            "{\"event\":\"rabbit-update\"}",
+                            "{\"event\":\"sim-entity-delete\"}",
+                            "{\"event\":\"rabbit-delete\"}"),
+                    xapiClient.statements);
+        }
+    }
+
+    @Test
     void emptyReflectionDoesNotDispatchCacheOrConsumePendingCreate() throws Exception {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
@@ -890,8 +985,144 @@ class HlaObjectSubscriptionTest {
             hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Inherited");
 
             assertEquals(Set.of("FirstName"), cache.subscriptions().get("SimEntity"));
-            assertEquals(Set.of("Hunger"), cache.subscriptions().get("Rabbit"));
+            assertEquals(Set.of("FirstName"), cache.subscriptions().get("Carrot"));
+            assertEquals(Set.of("FirstName", "Hunger"), cache.subscriptions().get("Rabbit"));
+            assertEquals(Set.of("FirstName"), cache.subscriptions().get("Wolf"));
             assertEquals(Set.of("FirstName", "Hunger"), rti.requests.get(0).attributes());
+        }
+    }
+
+    @Test
+    void ancestorQuerySubscribesDescendantsFirstAndCachesConcreteClasses(
+            @TempDir Path tempDir) throws Exception {
+        StatementTrigger simEntityQuery = new StatementTrigger();
+        simEntityQuery.statement = """
+                {"entityId":["query","SimEntity",["EntityId"],null]}
+                """;
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(simEntityQuery);
+
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("concrete-classes.sqlite"))) {
+            RecordingRti rti = new RecordingRti();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, new RecordingXapiClient());
+
+            subscribeObjectClasses(hlaInterface);
+
+            assertEquals(
+                    List.of("Carrot", "Rabbit", "Wolf", "SimEntity"),
+                    rti.subscriptions.stream()
+                            .map(ObjectSubscription::className)
+                            .toList());
+            assertEquals(
+                    List.of(
+                            "SimEntity.Carrot",
+                            "SimEntity.Rabbit",
+                            "SimEntity.Wolf",
+                            "SimEntity"),
+                    rti.objectClassHandleLookups);
+            assertTrue(rti.subscriptions.stream()
+                    .allMatch(subscription ->
+                            subscription.attributes().equals(Set.of("EntityId"))));
+
+            List<String> concreteClasses = List.of("Carrot", "Rabbit", "Wolf");
+            for (int i = 0; i < concreteClasses.size(); i++) {
+                String className = concreteClasses.get(i);
+                ObjectClassHandle classHandle = rti.classHandle(className);
+                ObjectInstanceHandle object = rti.objectHandle(110 + i);
+                hlaInterface.discoverObjectInstance(
+                        object,
+                        classHandle,
+                        className + " Concrete");
+                AttributeHandleValueMap reflection =
+                        new HLA1516eAttributeHandleValueMap();
+                reflection.put(
+                        rti.attributeHandle(classHandle, "EntityId"),
+                        HLAEncodingTestSupport.asciiString(
+                                className.toLowerCase() + "-concrete"));
+                hlaInterface.reflectAttributeValues(
+                        object,
+                        reflection,
+                        null,
+                        null,
+                        null,
+                        null);
+
+                assertEquals(
+                        className,
+                        cache.findCurrentObjectSnapshot(object.toString())
+                                .orElseThrow()
+                                .className());
+                assertEquals(
+                        1,
+                        cache.currentObjects(className).size());
+            }
+
+            assertEquals(3, rti.requests.size());
+            assertTrue(rti.requests.stream()
+                    .allMatch(request -> request.attributes().equals(Set.of("EntityId"))));
+            assertEquals(
+                    concreteClasses,
+                    cache.currentObjects("SimEntity").stream()
+                            .map(CachedObject::className)
+                            .toList());
+        }
+    }
+
+    @Test
+    void overlappingAncestorAndConcreteSubscriptionsDoNotDuplicateReflectionTriggers()
+            throws Exception {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                objectUpdateTrigger(
+                        "SimEntity",
+                        "{\"event\":\"sim-entity-update\"}"),
+                objectUpdateTrigger(
+                        "Rabbit",
+                        "{\"event\":\"rabbit-update\"}"));
+
+        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+            RecordingRti rti = new RecordingRti();
+            RecordingXapiClient xapiClient = new RecordingXapiClient();
+            HlaInterfaceImpl hlaInterface =
+                    hlaInterface(cache, rti.proxy(), config, xapiClient);
+
+            subscribeObjectClasses(hlaInterface);
+
+            ObjectClassHandle rabbitClass = rti.classHandle("Rabbit");
+            ObjectInstanceHandle rabbit = rti.objectHandle(113);
+            hlaInterface.discoverObjectInstance(
+                    rabbit,
+                    rabbitClass,
+                    "Rabbit Overlap");
+            AttributeHandleValueMap reflection =
+                    new HLA1516eAttributeHandleValueMap();
+            reflection.put(
+                    rti.attributeHandle(rabbitClass, "EntityId"),
+                    HLAEncodingTestSupport.asciiString("rabbit-overlap"));
+            reflection.put(
+                    rti.attributeHandle(rabbitClass, "Hunger"),
+                    HLAEncodingTestSupport.int32(12, ByteOrder.BIG_ENDIAN));
+            hlaInterface.reflectAttributeValues(
+                    rabbit,
+                    reflection,
+                    null,
+                    null,
+                    null,
+                    null);
+
+            assertEquals(1, rti.requests.size());
+            assertEquals(2, rti.attributeNameResolutions);
+            assertEquals(
+                    List.of(
+                            "{\"event\":\"sim-entity-update\"}",
+                            "{\"event\":\"rabbit-update\"}"),
+                    xapiClient.statements);
         }
     }
 
@@ -1011,7 +1242,10 @@ class HlaObjectSubscriptionTest {
         setField(
                 hlaInterface,
                 "triggerDispatcher",
-                new StatementTriggerDispatcher(config, new TriggerProcessor(injectionHandler)));
+                new StatementTriggerDispatcher(
+                        config,
+                        new TriggerProcessor(injectionHandler),
+                        catalog));
         setField(hlaInterface, "xapiClient", xapiClient);
         return hlaInterface;
     }
@@ -1136,6 +1370,7 @@ class HlaObjectSubscriptionTest {
 
         private final Map<String, ObjectClassHandle> classes = new LinkedHashMap<>();
         private final Map<ObjectClassHandle, String> classNames = new LinkedHashMap<>();
+        private final List<String> objectClassHandleLookups = new ArrayList<>();
         private final Map<String, AttributeHandle> attributes = new LinkedHashMap<>();
         private final Map<AttributeHandle, String> attributeNames = new LinkedHashMap<>();
         private final List<ObjectSubscription> subscriptions = new ArrayList<>();
@@ -1155,6 +1390,7 @@ class HlaObjectSubscriptionTest {
         }
 
         private ObjectClassHandle classHandle(String className) {
+            className = className.substring(className.lastIndexOf('.') + 1);
             ObjectClassHandle handle = classes.computeIfAbsent(
                     className,
                     ignored -> (ObjectClassHandle) new HLA1516eHandle(nextClassHandle++));
@@ -1179,7 +1415,10 @@ class HlaObjectSubscriptionTest {
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
             return switch (method.getName()) {
-                case "getObjectClassHandle" -> classHandle((String) args[0]);
+                case "getObjectClassHandle" -> {
+                    objectClassHandleLookups.add((String) args[0]);
+                    yield classHandle((String) args[0]);
+                }
                 case "getObjectClassName" -> qualifiedClassName(classNames.get(args[0]));
                 case "getAttributeHandleSetFactory" -> new HLA1516eAttributeHandleSetFactory();
                 case "getAttributeHandle" -> attributeHandle((ObjectClassHandle) args[0], (String) args[1]);

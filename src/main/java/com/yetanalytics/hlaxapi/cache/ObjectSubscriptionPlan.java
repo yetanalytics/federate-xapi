@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 
 /** Immutable cache and event subscription requirements derived from configuration. */
@@ -84,7 +83,11 @@ final class ObjectSubscriptionPlan {
         Map<String, Set<String>> merged = new LinkedHashMap<>();
         QueryReferenceCollector.collect(xapiConfig.statementTriggers)
                 .forEach((className, attributes) ->
-                        addAttributes(merged, className, attributes));
+                        addReferencedAttributesForClassAndDescendants(
+                                merged,
+                                catalog,
+                                className,
+                                attributes));
         addObjectDeleteTriggers(merged, xapiConfig, catalog);
         addTrackedObjects(merged, xapiConfig, catalog);
         return merged;
@@ -105,13 +108,11 @@ final class ObjectSubscriptionPlan {
                     || trigger.clazz.isBlank()) {
                 continue;
             }
-            Optional<FomCatalog.ObjectClassDef> clazz = catalog.objectClass(trigger.clazz);
-            if (clazz.isPresent()) {
-                FomCatalog.ObjectClassDef objectClass = clazz.orElseThrow();
-                addAttributes(events, objectClass.localName(), objectClass.topLevelAttributeNames());
-            } else {
-                addAttributes(events, trigger.clazz, Set.of("*"));
-            }
+            addAllAttributesForClassAndDescendants(
+                    events,
+                    catalog,
+                    trigger.clazz,
+                    true);
         }
         return events;
     }
@@ -130,8 +131,11 @@ final class ObjectSubscriptionPlan {
                     || trigger.clazz.isBlank()) {
                 continue;
             }
-            catalog.objectClass(trigger.clazz).ifPresent(clazz ->
-                    addAttributes(merged, clazz.localName(), clazz.topLevelAttributeNames()));
+            addAllAttributesForClassAndDescendants(
+                    merged,
+                    catalog,
+                    trigger.clazz,
+                    false);
         }
     }
 
@@ -160,24 +164,52 @@ final class ObjectSubscriptionPlan {
                 continue;
             }
             if (trackedObject.allAttributes) {
-                Optional<FomCatalog.ObjectClassDef> clazz =
-                        catalog.objectClass(trackedObject.clazz);
-                if (clazz.isPresent()) {
-                    FomCatalog.ObjectClassDef objectClass = clazz.orElseThrow();
-                    addAttributes(
-                            merged,
-                            objectClass.localName(),
-                            objectClass.topLevelAttributeNames());
-                } else {
-                    addAttributes(merged, trackedObject.clazz, Set.of("*"));
-                }
+                addAllAttributesForClassAndDescendants(
+                        merged,
+                        catalog,
+                        trackedObject.clazz,
+                        true);
             } else {
-                String className = catalog.objectClass(trackedObject.clazz)
-                        .map(FomCatalog.ObjectClassDef::localName)
-                        .orElse(trackedObject.clazz);
-                addAttributes(merged, className, trackedObject.attributes);
+                addReferencedAttributesForClassAndDescendants(
+                        merged,
+                        catalog,
+                        trackedObject.clazz,
+                        trackedObject.attributes);
             }
         }
+    }
+
+    private static void addReferencedAttributesForClassAndDescendants(
+            Map<String, Set<String>> subscriptions,
+            FomCatalog catalog,
+            String className,
+            Iterable<String> attributes) {
+        var classes = catalog.objectClassAndDescendants(className);
+        if (classes.isEmpty()) {
+            addAttributes(subscriptions, className, attributes);
+            return;
+        }
+        classes.forEach(clazz ->
+                addAttributes(subscriptions, clazz.localName(), attributes));
+    }
+
+    private static void addAllAttributesForClassAndDescendants(
+            Map<String, Set<String>> subscriptions,
+            FomCatalog catalog,
+            String className,
+            boolean retainUnknownClass) {
+        var classes = catalog.objectClassAndDescendants(className);
+        if (classes.isEmpty()) {
+            if (retainUnknownClass) {
+                addAttributes(subscriptions, className, Set.of("*"));
+            }
+            return;
+        }
+        classes.forEach(clazz ->
+                addAttributes(
+                        subscriptions,
+                        clazz.localName(),
+                        clazz.topLevelAttributeNames()));
     }
 
     @SafeVarargs

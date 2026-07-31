@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.yetanalytics.extension.SuppressTestLogging;
 import com.yetanalytics.hlaxapi.TriggerProcessor.TriggerProcessingResult;
+import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
@@ -12,8 +13,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
 
 class StatementTriggerDispatcherTest {
+
+    private final FomCatalog catalog = new FomCatalog(new FOMXML(
+            new SimulationConfig(null, null, null, null, "config/HlaFedereplFOM.xml"),
+            new HLADecoderRegistry(new HLA1516eEncoderFactory())));
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.StatementTriggerDispatcher"})
@@ -29,7 +35,8 @@ class StatementTriggerDispatcherTest {
         config.statementTriggers =
                 List.of(first, wrongType, wrongClass, skipped, failed, throwsException, second);
         ControlledTriggerProcessor processor = new ControlledTriggerProcessor();
-        StatementTriggerDispatcher dispatcher = new StatementTriggerDispatcher(config, processor);
+        StatementTriggerDispatcher dispatcher =
+                new StatementTriggerDispatcher(config, processor, catalog);
 
         List<StatementTriggerDispatcher.StagedStatement> staged = dispatcher.stage(
                 StatementTrigger.Type.OBJECT_UPDATE,
@@ -56,9 +63,10 @@ class StatementTriggerDispatcherTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "object"),
+                trigger(StatementTrigger.Type.INTERACTION, "SimEntity", "ancestor-interaction"),
                 trigger(StatementTrigger.Type.INTERACTION, "Rabbit", "interaction"));
         StatementTriggerDispatcher dispatcher =
-                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor());
+                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor(), catalog);
         List<String> enqueued = new ArrayList<>();
 
         dispatcher.dispatch(
@@ -71,15 +79,17 @@ class StatementTriggerDispatcherTest {
     }
 
     @Test
-    void lifecycleEventsMatchTheirExactTypeAndClass() {
+    void lifecycleEventsMatchTheirTypeAndFomHierarchy() {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
+                trigger(StatementTrigger.Type.OBJECT_CREATE, "SimEntity", "sim-entity-create"),
                 trigger(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", "rabbit-create"),
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "rabbit-update"),
+                trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity", "sim-entity-delete"),
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", "rabbit-delete"),
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "Wolf", "wolf-delete"));
         StatementTriggerDispatcher dispatcher =
-                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor());
+                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor(), catalog);
         ObjectInjectionContext rabbit =
                 new ObjectInjectionContext("Rabbit", "object-1", Map.of());
 
@@ -94,8 +104,12 @@ class StatementTriggerDispatcherTest {
                 .map(StatementTriggerDispatcher.StagedStatement::statement)
                 .toList();
 
-        assertEquals(List.of("rabbit-create"), createStatements);
-        assertEquals(List.of("rabbit-delete"), deleteStatements);
+        assertEquals(
+                List.of("sim-entity-create", "rabbit-create"),
+                createStatements);
+        assertEquals(
+                List.of("sim-entity-delete", "rabbit-delete"),
+                deleteStatements);
     }
 
     @Test
@@ -104,9 +118,10 @@ class StatementTriggerDispatcherTest {
         config.statementTriggers = List.of(
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity", "sim-entity-update"),
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "rabbit-update"),
-                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Wolf", "wolf-update"));
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Wolf", "wolf-update"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "MissingObject", "unknown-update"));
         StatementTriggerDispatcher dispatcher =
-                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor());
+                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor(), catalog);
         ObjectInjectionContext rabbit =
                 new ObjectInjectionContext("Rabbit", "object-1", Map.of());
 

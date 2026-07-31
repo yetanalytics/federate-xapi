@@ -1,6 +1,7 @@
 package com.yetanalytics.hlaxapi.cache;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -8,10 +9,16 @@ import com.yetanalytics.hlaxapi.FOMXML;
 import com.yetanalytics.hlaxapi.HLADecoderRegistry;
 import com.yetanalytics.hlaxapi.SimulationConfig;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
+import com.yetanalytics.hlaxapi.config.model.ComparisonOperator;
+import com.yetanalytics.hlaxapi.config.model.Criterion;
 import com.yetanalytics.hlaxapi.config.model.ObjectCacheConfig;
+import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
+import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TrackedObject;
+import com.yetanalytics.hlaxapi.config.model.ValueExpression;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
@@ -41,7 +48,9 @@ class ObjectSubscriptionPlanTest {
         ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
 
         assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("SimEntity"));
-        assertEquals(Set.of("Hunger"), plan.cacheSubscriptions().get("Rabbit"));
+        assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("Carrot"));
+        assertEquals(Set.of("FirstName", "Hunger"), plan.cacheSubscriptions().get("Rabbit"));
+        assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("Wolf"));
         assertTrue(plan.eventSubscriptions().isEmpty());
         assertEquals(Set.of("FirstName"), plan.effectiveAttributes("SimEntity"));
         assertEquals(Set.of("FirstName", "Hunger"), plan.effectiveAttributes("Rabbit"));
@@ -52,5 +61,122 @@ class ObjectSubscriptionPlanTest {
         assertThrows(
                 UnsupportedOperationException.class,
                 () -> plan.subscriptions().get("Rabbit").add("EntityId"));
+    }
+
+    @Test
+    void lifecycleBaseClassSubscribesEveryDescendantToItsCompleteAttributesWithoutCache() {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(
+                objectTrigger(StatementTrigger.Type.OBJECT_CREATE, "SimEntity"),
+                objectTrigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity"),
+                objectTrigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity"));
+
+        ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
+
+        assertFalse(plan.requiresCache());
+        assertTrue(plan.cacheSubscriptions().isEmpty());
+        assertCompleteHierarchy(plan.eventSubscriptions());
+        assertCompleteHierarchy(plan.subscriptions());
+    }
+
+    @Test
+    void deleteBaseClassCachesCompleteStateForEveryDescendant() {
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers =
+                List.of(objectTrigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity"));
+
+        ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
+
+        assertTrue(plan.requiresCache());
+        assertCompleteHierarchy(plan.cacheSubscriptions());
+        assertCompleteHierarchy(plan.eventSubscriptions());
+        assertCompleteHierarchy(plan.subscriptions());
+    }
+
+    @Test
+    void previousAndLookupReferencesExpandOnlyTheirAttributesAcrossDescendants() {
+        StatementTrigger trigger =
+                objectTrigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity");
+        trigger.statement = """
+                {
+                  "oldPosition":["previous",["Position"]],
+                  "firstName":["lookup","entity",["FirstName"]]
+                }
+                """;
+        ObjectLookup lookup = new ObjectLookup();
+        lookup.clazz = "SimEntity";
+        lookup.criteria = new Criterion(
+                new Target(List.of("EntityId")),
+                ComparisonOperator.EQ,
+                new ValueExpression("entity-one"));
+        trigger.lookups = Map.of("entity", lookup);
+        XapiConfig config = new XapiConfig();
+        config.statementTriggers = List.of(trigger);
+
+        ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
+
+        assertTrue(plan.requiresCache());
+        for (FomCatalog.ObjectClassDef clazz :
+                catalog.objectClassAndDescendants("SimEntity")) {
+            assertEquals(
+                    Set.of("EntityId", "FirstName", "Position"),
+                    plan.cacheSubscriptions().get(clazz.localName()));
+        }
+        assertCompleteHierarchy(plan.eventSubscriptions());
+    }
+
+    @Test
+    void trackedBaseClassExpandsExplicitAndAllAttributeRequirements() {
+        TrackedObject explicit = new TrackedObject();
+        explicit.clazz = "SimEntity";
+        explicit.attributes = List.of("EntityId", "Position");
+        ObjectCacheConfig explicitCache = new ObjectCacheConfig();
+        explicitCache.trackedObjects = List.of(explicit);
+        XapiConfig explicitConfig = new XapiConfig();
+        explicitConfig.objectCacheConfig = explicitCache;
+
+        ObjectSubscriptionPlan explicitPlan =
+                ObjectSubscriptionPlan.from(explicitConfig, catalog);
+
+        for (FomCatalog.ObjectClassDef clazz :
+                catalog.objectClassAndDescendants("SimEntity")) {
+            assertEquals(
+                    Set.of("EntityId", "Position"),
+                    explicitPlan.cacheSubscriptions().get(clazz.localName()));
+        }
+
+        TrackedObject all = new TrackedObject();
+        all.clazz = "SimEntity";
+        all.allAttributes = true;
+        ObjectCacheConfig allCache = new ObjectCacheConfig();
+        allCache.trackedObjects = List.of(all);
+        XapiConfig allConfig = new XapiConfig();
+        allConfig.objectCacheConfig = allCache;
+
+        ObjectSubscriptionPlan allPlan =
+                ObjectSubscriptionPlan.from(allConfig, catalog);
+
+        assertTrue(explicitPlan.requiresCache());
+        assertTrue(allPlan.requiresCache());
+        assertCompleteHierarchy(allPlan.cacheSubscriptions());
+    }
+
+    private StatementTrigger objectTrigger(
+            StatementTrigger.Type type,
+            String className) {
+        StatementTrigger trigger = new StatementTrigger();
+        trigger.type = type;
+        trigger.clazz = className;
+        trigger.statement = "{}";
+        return trigger;
+    }
+
+    private void assertCompleteHierarchy(Map<String, Set<String>> subscriptions) {
+        for (FomCatalog.ObjectClassDef clazz :
+                catalog.objectClassAndDescendants("SimEntity")) {
+            assertEquals(
+                    Set.copyOf(clazz.topLevelAttributeNames()),
+                    subscriptions.get(clazz.localName()));
+        }
     }
 }

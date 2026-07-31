@@ -56,7 +56,7 @@ At the top level the file supports:
 Fields:
 
 - `type`: One of `Interaction`, `ObjectCreate`, `ObjectUpdate`, or `ObjectDelete`.
-- `class`: Local HLA interaction or object class name. Matching is exact: an object trigger for `SimEntity` does not also fire for a reflection reported as `Rabbit`.
+- `class`: Local HLA interaction or object class name. Interaction matching is exact. Object lifecycle matching is polymorphic: a trigger configured for an object class also matches instances of every FOM descendant.
 - `criteria`: Optional expression evaluated before the statement template is processed. A non-matching trigger is skipped without producing an xAPI statement. A trigger without criteria always matches.
 - `lookups`: Optional named cache lookups loaded on first use. A lookup result, including a missing result, is reused for the rest of that trigger attempt.
 - `statement`: An xAPI statement template. Any JSON object accepted by the xAPI spec can be used here, with injection expressions inserted where dynamic values are needed.
@@ -69,15 +69,23 @@ Every matching trigger is processed once for an eligible callback. One trigger f
 | Type | Eligible RTI callback | Meaning of `trigger` |
 | --- | --- | --- |
 | `Interaction` | Every received interaction of the exact class | Parameters in that interaction |
-| `ObjectCreate` | First successfully processed non-empty reflection after discovery | Attributes in that one reflection |
-| `ObjectUpdate` | Every successfully processed non-empty reflection | Attributes in that one reflection |
-| `ObjectDelete` | First removal of a known active object | Last cached attributes for the object |
+| `ObjectCreate` | First successfully processed non-empty reflection after discovery of the configured class or a descendant | Attributes in that one reflection |
+| `ObjectUpdate` | Every successfully processed non-empty reflection for the configured class or a descendant | Attributes in that one reflection |
+| `ObjectDelete` | First removal of a known active object of the configured class or a descendant | Last cached attributes for the object |
 
-Object event triggers subscribe their configured class to all top-level FOM attributes, including inherited attributes. These event subscriptions are merged with attributes required by queries, lookups, `previous`, and `objectCache.trackedObjects`.
+Object lifecycle trigger classes are polymorphic. For example, an `ObjectUpdate` trigger configured for `SimEntity` matches reflections reported as `SimEntity`, `Carrot`, `Rabbit`, or `Wolf`, while a trigger configured for `Rabbit` matches only `Rabbit` in this FOM. Interaction trigger classes remain exact-match.
+
+Each configured trigger remains an independent rule. If both `SimEntity` and `Rabbit` ObjectUpdate triggers are configured, one Rabbit reflection evaluates each trigger once and can intentionally produce two statements. If only the `SimEntity` trigger is configured, that reflection evaluates it once. Subscribing both an ancestor and descendant, subscribing multiple attributes, or receiving multiple attributes in one callback does not duplicate a configured trigger's execution.
+
+Object trigger templates and criteria are validated against their configured class. A `SimEntity` trigger can use inherited `SimEntity` attributes such as `EntityId`, but it cannot directly reference child-only attributes such as `Rabbit.Hunger` because that path is not valid for every class the trigger matches.
+
+Object event subscriptions expand across the configured class and every FOM descendant. Each class is subscribed to all of its own top-level attributes, including inherited attributes, so a child-only update such as `Rabbit.Hunger` or `Carrot.Age` is eligible for a `SimEntity` trigger. These event subscriptions are merged and deduplicated with attributes required by queries, lookups, `previous`, and `objectCache.trackedObjects`.
 
 `ObjectCreate` means first observed by this adapter, not necessarily created in the federation at that moment. It also fires for pre-existing objects discovered after a late join and can fire again after the adapter restarts. Discovery marks an object as pending creation and requests its subscribed values; the trigger waits for the first non-empty reflection. That reflection is independently eligible for both `ObjectCreate` and `ObjectUpdate`.
 
 Create payloads are not aggregated across callbacks. If the first reflection contains only `EntityId`, another attribute arriving in a later reflection is missing from the Create payload. A successful first reflection consumes the pending-create marker even when a particular Create trigger is skipped by criteria or a required injection. A cache failure retains the marker for the next successful reflection. Removal before the first reflection clears it without emitting Create.
+
+Update payloads are also callback-local. A `SimEntity` trigger activated by a Rabbit reflection containing only `Hunger` has no incoming `EntityId`, even if `EntityId` was cached earlier. A required `trigger` injection for `EntityId` suppresses that statement, while an optional injection renders `null`. Use `previous`, `query`, or `lookup` when the desired value should come from cached state.
 
 `ObjectDelete` reports that an object disappeared, not why it disappeared. It uses the final state retained by this adapter and therefore always activates the object cache. An object removed after discovery but before receiving attributes can still produce a static Delete statement; required missing values suppress a statement and optional values render `null`. Unknown, already removed, or duplicate removals are skipped.
 
@@ -88,6 +96,8 @@ Discovery and removal can race. If the object disappears before the adapter's bo
 For Create and Update, matching statements are rendered against the incoming reflection and the pre-reflection cache. The adapter then commits the complete reflection as one cache transaction and enqueues staged statements only after a successful commit. If caching fails, no statements from that reflection are enqueued. An LRS enqueue failure does not roll back an already committed reflection.
 
 For Delete, statements and their queries/lookups are rendered while the object is still current. The adapter then marks the object removed and enqueues only after that mutation succeeds.
+
+For ObjectUpdate, one update means one RTI `reflectAttributeValues` callback. A callback carrying several attributes is still one update and evaluates each applicable configured trigger once. Repeated callbacks and an RTI or publisher splitting attributes across callbacks are separate updates and can each emit statements.
 
 This ordering relies on the RTI delivering callbacks serially, as Portico's immediate callback dispatcher currently does. The adapter does not promise pre-update snapshot semantics if callbacks are invoked concurrently.
 
@@ -324,9 +334,9 @@ The object cache stores the latest reflected values for subscribed HLA object at
 - an ObjectDelete trigger exists for a known FOM class, or
 - `objectCache.trackedObjects` explicitly requests tracked attributes.
 
-Incoming-only ObjectCreate and ObjectUpdate triggers do not enable SQL on their own. They still create event subscriptions for all inherited top-level attributes.
+Incoming-only ObjectCreate and ObjectUpdate triggers do not enable SQL on their own. They still create event subscriptions for the configured class and every descendant, using each class's complete inherited and declared top-level attribute set.
 
-When enabled, the adapter subscribes to the top-level object attributes required by `previous`, query targets, query criteria, lookup targets, lookup criteria, ObjectDelete snapshots, and explicit tracked objects. Requirements configured on an ancestor and a discovered child are combined for the bootstrap attribute request. Use the `trackedObjects` array to force caching of simulation objects:
+When enabled, the adapter subscribes to the top-level object attributes required by `previous`, query targets, query criteria, lookup targets, lookup criteria, ObjectDelete snapshots, and explicit tracked objects. A requirement configured on a FOM class is expanded to that class and its descendants. Referenced attribute lists are copied to every descendant, while ObjectDelete and `allAttributes` requirements use each descendant's complete inherited and declared top-level attribute set. Requirements configured on an ancestor and a discovered child are combined for the bootstrap attribute request. Use the `trackedObjects` array to force caching of simulation objects:
 
 ```json
 {
@@ -343,8 +353,8 @@ When enabled, the adapter subscribes to the top-level object attributes required
 Tracked object fields:
 
 - `class`: Local HLA object class name. Use `*` with `allAttributes: true` to subscribe to all top-level attributes for every FOM object class with attributes.
-- `attributes`: Top-level attribute names to subscribe to.
-- `allAttributes`: When `true`, expands to all top-level attributes for the class.
+- `attributes`: Top-level attribute names to subscribe to for the class and every descendant.
+- `allAttributes`: When `true`, expands to each matching class's complete inherited and declared top-level attribute set.
 
 `HLA_OBJECT_CACHE_BACKEND` selects `sqlite` or `postgresql` case-insensitively. It defaults to `sqlite`.
 Backend and connection settings are runtime configuration and cannot be set in the xAPI JSON file.
@@ -352,6 +362,10 @@ Backend and connection settings are runtime configuration and cannot be set in t
 The cache decodes reflected values using the FOM and stores both top-level values and flattened nested values for fixed records and arrays. For example, reflecting `Position` can make `Position`, `Position.X`, and `Position.Y` available to query and lookup targets.
 
 One RTI reflection is one cache transaction: every reflected attribute is replaced with a shared observation timestamp and sequence, or the transaction rolls back without changing any of them. A partial reflection updates only the attributes it contains; it does not erase other cached attributes. Empty reflections are ignored.
+
+Known object classes are subscribed most-specific-first, with deterministic name ordering among classes at the same FOM depth. This allows a late-joining adapter to discover pre-existing objects at the most-concrete subscribed FOM class before subscribing their ancestors. Discovery and reflection cache the class reported by the RTI, and a base-class query such as `SimEntity` still includes cached descendants.
+
+Here, "concrete" means the FOM class under which the publishing federate registered the object and which the RTI makes known to this adapter. An object actually registered as `SimEntity` remains `SimEntity`; the adapter does not reinterpret its `EntityType` attribute to reclassify it as `Carrot`, `Rabbit`, or `Wolf`.
 
 ### SQLite
 

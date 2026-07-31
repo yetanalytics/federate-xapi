@@ -65,6 +65,34 @@ public final class FomCatalog {
                 .toList();
     }
 
+    /**
+     * Returns whether the actual object class is the configured class or one of
+     * its FOM descendants.
+     */
+    public boolean isSameOrDescendant(String actualClassName, String configuredClassName) {
+        ObjectClassDef actualClass = objectClass(actualClassName).orElse(null);
+        ObjectClassDef configuredClass = objectClass(configuredClassName).orElse(null);
+        return actualClass != null
+                && configuredClass != null
+                && isSameOrDescendant(actualClass, configuredClass);
+    }
+
+    /**
+     * Returns the number of known FOM ancestors for an object class, or -1 when
+     * the class is unknown.
+     */
+    public int objectClassDepth(String className) {
+        ObjectClassDef current = objectClass(className).orElse(null);
+        if (current == null) {
+            return -1;
+        }
+        int depth = 0;
+        while ((current = classesByName.get(current.parentName())) != null) {
+            depth++;
+        }
+        return depth;
+    }
+
     public Optional<FomAttribute> attribute(int id) {
         return Optional.ofNullable(attributesById.get(id));
     }
@@ -191,6 +219,13 @@ public final class FomCatalog {
         }
 
         private void addObjectClass(FOMXML.ObjectClassDefinition definition) {
+            String localClassName = localName(definition.name());
+            String localParentName = localName(definition.parentName());
+            ObjectClassDef parentClass = classesByName.get(localParentName);
+            String hlaName = parentClass == null || "HLAobjectRoot".equals(parentClass.localName())
+                    ? localClassName
+                    : parentClass.hlaName() + "." + localClassName;
+
             List<AttributeSource> allAttributes = new ArrayList<>();
             if (definition.parentName() != null) {
                 allAttributes.addAll(attributesByClassName.getOrDefault(definition.parentName(), List.of()));
@@ -209,9 +244,9 @@ public final class FomCatalog {
             ObjectClassDef classDef =
                     new ObjectClassDef(
                             classId,
-                            definition.name(),
-                            localName(definition.name()),
-                            localName(definition.parentName()),
+                            hlaName,
+                            localClassName,
+                            localParentName,
                             flattened);
             classesByName.put(classDef.localName(), classDef);
         }

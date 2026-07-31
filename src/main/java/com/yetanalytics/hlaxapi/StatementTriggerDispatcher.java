@@ -1,6 +1,7 @@
 package com.yetanalytics.hlaxapi;
 
 import com.yetanalytics.hlaxapi.TriggerProcessor.TriggerProcessingResult;
+import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.injection.InjectionContext;
@@ -19,10 +20,15 @@ public class StatementTriggerDispatcher {
 
     private final XapiConfig xapiConfig;
     private final TriggerProcessor triggerProcessor;
+    private final FomCatalog fomCatalog;
 
-    public StatementTriggerDispatcher(XapiConfig xapiConfig, TriggerProcessor triggerProcessor) {
+    public StatementTriggerDispatcher(
+            XapiConfig xapiConfig,
+            TriggerProcessor triggerProcessor,
+            FomCatalog fomCatalog) {
         this.xapiConfig = xapiConfig;
         this.triggerProcessor = triggerProcessor;
+        this.fomCatalog = fomCatalog;
     }
 
     public List<StagedStatement> stage(
@@ -34,9 +40,7 @@ public class StatementTriggerDispatcher {
         }
         List<StagedStatement> statements = new ArrayList<>();
         for (StatementTrigger trigger : xapiConfig.statementTriggers) {
-            if (trigger == null
-                    || trigger.type != eventType
-                    || !Objects.equals(trigger.clazz, hlaClass)) {
+            if (!matchesTrigger(trigger, eventType, hlaClass)) {
                 continue;
             }
             try {
@@ -54,6 +58,34 @@ public class StatementTriggerDispatcher {
             }
         }
         return List.copyOf(statements);
+    }
+
+    public boolean hasMatchingTrigger(
+            StatementTrigger.Type eventType,
+            String hlaClass) {
+        if (xapiConfig.statementTriggers == null) {
+            return false;
+        }
+        return xapiConfig.statementTriggers.stream()
+                .anyMatch(trigger -> matchesTrigger(trigger, eventType, hlaClass));
+    }
+
+    private boolean matchesTrigger(
+            StatementTrigger trigger,
+            StatementTrigger.Type eventType,
+            String hlaClass) {
+        return trigger != null
+                && trigger.type == eventType
+                && matchesClass(eventType, trigger.clazz, hlaClass);
+    }
+
+    private boolean matchesClass(
+            StatementTrigger.Type eventType,
+            String configuredClass,
+            String actualClass) {
+        return eventType.isObjectEvent()
+                ? fomCatalog.isSameOrDescendant(actualClass, configuredClass)
+                : Objects.equals(configuredClass, actualClass);
     }
 
     public void enqueue(List<StagedStatement> statements, Consumer<String> statementSink) {
