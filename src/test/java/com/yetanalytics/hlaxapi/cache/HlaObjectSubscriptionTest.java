@@ -11,7 +11,6 @@ import com.yetanalytics.hlaxapi.HLAEncodingTestSupport;
 import com.yetanalytics.hlaxapi.HlaInterfaceImpl;
 import com.yetanalytics.hlaxapi.InjectionHandler;
 import com.yetanalytics.hlaxapi.SimulationConfig;
-import com.yetanalytics.hlaxapi.StatementTriggerDispatcher;
 import com.yetanalytics.hlaxapi.TriggerProcessor;
 import com.yetanalytics.hlaxapi.XapiClient;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
@@ -345,8 +344,7 @@ class HlaObjectSubscriptionTest {
 
     @Test
     @SuppressTestLogging({
-        "com.yetanalytics.hlaxapi.TriggerProcessor",
-        "com.yetanalytics.hlaxapi.StatementTriggerDispatcher"
+        "com.yetanalytics.hlaxapi.TriggerProcessor"
     })
     void firstReflectionConsumesCreateEvenWhenRequiredValuesAreMissing() throws Exception {
         StatementTrigger required = objectTrigger(
@@ -459,8 +457,7 @@ class HlaObjectSubscriptionTest {
     @Test
     @SuppressTestLogging({
         "com.yetanalytics.hlaxapi.HlaInterfaceImpl",
-        "com.yetanalytics.hlaxapi.TriggerProcessor",
-        "com.yetanalytics.hlaxapi.StatementTriggerDispatcher"
+        "com.yetanalytics.hlaxapi.TriggerProcessor"
     })
     void discoveryRemovalRaceStillDispatchesStaticAndOptionalDeletes(@TempDir Path tempDir) throws Exception {
         StatementTrigger staticDelete =
@@ -597,8 +594,7 @@ class HlaObjectSubscriptionTest {
 
     @Test
     @SuppressTestLogging({
-        "com.yetanalytics.hlaxapi.TriggerProcessor",
-        "com.yetanalytics.hlaxapi.StatementTriggerDispatcher"
+        "com.yetanalytics.hlaxapi.TriggerProcessor"
     })
     void eventOnlyReflectionDispatchesMatchingTriggersOnceFromTheCompletePayload() throws Exception {
         StatementTrigger passing = objectUpdateTrigger(
@@ -790,8 +786,7 @@ class HlaObjectSubscriptionTest {
 
     @Test
     @SuppressTestLogging({
-        "com.yetanalytics.hlaxapi.TriggerProcessor",
-        "com.yetanalytics.hlaxapi.StatementTriggerDispatcher"
+        "com.yetanalytics.hlaxapi.TriggerProcessor"
     })
     void firstObservationSupportsOptionalPreviousWithoutRetryingRequiredInjections(
             @TempDir Path tempDir) throws Exception {
@@ -1241,11 +1236,8 @@ class HlaObjectSubscriptionTest {
         setField(hlaInterface, "xapiConfig", config);
         setField(
                 hlaInterface,
-                "triggerDispatcher",
-                new StatementTriggerDispatcher(
-                        config,
-                        new TriggerProcessor(injectionHandler),
-                        catalog));
+                "triggerProcessor",
+                new TriggerProcessor(config, injectionHandler, catalog));
         setField(hlaInterface, "xapiClient", xapiClient);
         return hlaInterface;
     }

@@ -15,14 +15,14 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
 
-class StatementTriggerDispatcherTest {
+class TriggerProcessorDispatchTest {
 
     private final FomCatalog catalog = new FomCatalog(new FOMXML(
             new SimulationConfig(null, null, null, null, "config/HlaFedereplFOM.xml"),
             new HLADecoderRegistry(new HLA1516eEncoderFactory())));
 
     @Test
-    @SuppressTestLogging({"com.yetanalytics.hlaxapi.StatementTriggerDispatcher"})
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
     void matchesExactlyStagesOnceAndIsolatesProcessingAndEnqueueFailures() {
         StatementTrigger first = trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "first");
         StatementTrigger wrongType = trigger(StatementTrigger.Type.INTERACTION, "Rabbit", "wrong-type");
@@ -34,21 +34,19 @@ class StatementTriggerDispatcherTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers =
                 List.of(first, wrongType, wrongClass, skipped, failed, throwsException, second);
-        ControlledTriggerProcessor processor = new ControlledTriggerProcessor();
-        StatementTriggerDispatcher dispatcher =
-                new StatementTriggerDispatcher(config, processor, catalog);
+        ControlledTriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
 
-        List<StatementTriggerDispatcher.StagedStatement> staged = dispatcher.stage(
+        List<TriggerProcessor.StagedStatement> staged = processor.stage(
                 StatementTrigger.Type.OBJECT_UPDATE,
                 "Rabbit",
                 new ObjectInjectionContext("Rabbit", "object-1", Map.of()));
 
         assertEquals(List.of("first", "second"),
-                staged.stream().map(StatementTriggerDispatcher.StagedStatement::statement).toList());
+                staged.stream().map(TriggerProcessor.StagedStatement::statement).toList());
         assertEquals(List.of("first", "skip", "fail", "throw", "second"), processor.processed);
 
         List<String> enqueued = new ArrayList<>();
-        dispatcher.enqueue(staged, statement -> {
+        processor.enqueue(staged, statement -> {
             if ("first".equals(statement)) {
                 throw new IllegalStateException("first enqueue failed");
             }
@@ -59,17 +57,16 @@ class StatementTriggerDispatcherTest {
     }
 
     @Test
-    void interactionEventsUseTheSameDispatcherWithoutMatchingObjectTriggers() {
+    void interactionEventsUseTheSameProcessorWithoutMatchingObjectTriggers() {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "object"),
                 trigger(StatementTrigger.Type.INTERACTION, "SimEntity", "ancestor-interaction"),
                 trigger(StatementTrigger.Type.INTERACTION, "Rabbit", "interaction"));
-        StatementTriggerDispatcher dispatcher =
-                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor(), catalog);
+        TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
         List<String> enqueued = new ArrayList<>();
 
-        dispatcher.dispatch(
+        processor.dispatch(
                 StatementTrigger.Type.INTERACTION,
                 "Rabbit",
                 new InteractionInjectionContext("Rabbit", Map.of()),
@@ -88,20 +85,19 @@ class StatementTriggerDispatcherTest {
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity", "sim-entity-delete"),
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", "rabbit-delete"),
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "Wolf", "wolf-delete"));
-        StatementTriggerDispatcher dispatcher =
-                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor(), catalog);
+        TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
         ObjectInjectionContext rabbit =
                 new ObjectInjectionContext("Rabbit", "object-1", Map.of());
 
-        List<String> createStatements = dispatcher
+        List<String> createStatements = processor
                 .stage(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", rabbit)
                 .stream()
-                .map(StatementTriggerDispatcher.StagedStatement::statement)
+                .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
-        List<String> deleteStatements = dispatcher
+        List<String> deleteStatements = processor
                 .stage(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", rabbit)
                 .stream()
-                .map(StatementTriggerDispatcher.StagedStatement::statement)
+                .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
 
         assertEquals(
@@ -120,15 +116,14 @@ class StatementTriggerDispatcherTest {
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "rabbit-update"),
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "Wolf", "wolf-update"),
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "MissingObject", "unknown-update"));
-        StatementTriggerDispatcher dispatcher =
-                new StatementTriggerDispatcher(config, new ControlledTriggerProcessor(), catalog);
+        TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
         ObjectInjectionContext rabbit =
                 new ObjectInjectionContext("Rabbit", "object-1", Map.of());
 
-        List<String> updateStatements = dispatcher
+        List<String> updateStatements = processor
                 .stage(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", rabbit)
                 .stream()
-                .map(StatementTriggerDispatcher.StagedStatement::statement)
+                .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
 
         assertEquals(
@@ -147,6 +142,10 @@ class StatementTriggerDispatcherTest {
     private static final class ControlledTriggerProcessor extends TriggerProcessor {
 
         private final List<String> processed = new ArrayList<>();
+
+        private ControlledTriggerProcessor(XapiConfig config, FomCatalog catalog) {
+            super(config, new InjectionHandler(), catalog);
+        }
 
         @Override
         public TriggerProcessingResult processTrigger(

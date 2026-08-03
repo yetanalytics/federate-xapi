@@ -59,11 +59,8 @@ class HlaInteractionDispatchTest {
         setField(hlaInterface, "ambassador", ambassador);
         setField(
                 hlaInterface,
-                "triggerDispatcher",
-                new StatementTriggerDispatcher(
-                        config,
-                        new TriggerProcessor(injectionHandler),
-                        catalog));
+                "triggerProcessor",
+                new TriggerProcessor(config, injectionHandler, catalog));
         setField(hlaInterface, "xapiClient", xapiClient);
         ParameterHandleValueMap parameters = new HLA1516eParameterHandleValueMap();
         parameters.put(stepNumber, HLAEncodingTestSupport.int32(42, ByteOrder.BIG_ENDIAN));

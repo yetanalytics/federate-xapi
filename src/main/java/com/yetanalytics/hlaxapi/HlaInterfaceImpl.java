@@ -100,9 +100,6 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     private TriggerProcessor triggerProcessor;
 
     @Autowired
-    private StatementTriggerDispatcher triggerDispatcher;
-
-    @Autowired
     private StatementValidator validator;
 
     @Autowired
@@ -288,7 +285,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         if (subscribedAttributes.isEmpty()) {
             return;
         }
-        if (triggerDispatcher.hasMatchingTrigger(
+        if (triggerProcessor.hasMatchingTrigger(
                 StatementTrigger.Type.OBJECT_CREATE,
                 className)) {
             pendingObjectCreates.put(theObject.toString(), className);
@@ -382,18 +379,18 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             ObjectInjectionContext context =
                     new ObjectInjectionContext(className, theObject.toString(), attributes);
             boolean createPending = className.equals(pendingObjectCreates.get(theObject.toString()));
-            List<StatementTriggerDispatcher.StagedStatement> statements = new ArrayList<>();
+            List<TriggerProcessor.StagedStatement> statements = new ArrayList<>();
             if (createPending) {
                 statements.addAll(
-                        triggerDispatcher.stage(StatementTrigger.Type.OBJECT_CREATE, className, context));
+                        triggerProcessor.stage(StatementTrigger.Type.OBJECT_CREATE, className, context));
             }
             statements.addAll(
-                    triggerDispatcher.stage(StatementTrigger.Type.OBJECT_UPDATE, className, context));
+                    triggerProcessor.stage(StatementTrigger.Type.OBJECT_UPDATE, className, context));
             objectCache.reflectAttributeValues(theObject.toString(), className, attributes);
             if (createPending) {
                 pendingObjectCreates.remove(theObject.toString(), className);
             }
-            triggerDispatcher.enqueue(statements, xapiClient::sendStatement);
+            triggerProcessor.enqueue(statements, xapiClient::sendStatement);
         } catch (AttributeNotDefined | InvalidAttributeHandle | InvalidObjectClassHandle | ObjectInstanceNotKnown
                 | FederateNotExecutionMember | NotConnected | RTIinternalError | RuntimeException e) {
             logger.error("Error processing reflected object attributes", e);
@@ -440,13 +437,13 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         }
         try {
             ObjectSnapshot snapshot = objectCache.findCurrentObjectSnapshot(objectHandle).orElse(null);
-            List<StatementTriggerDispatcher.StagedStatement> statements = List.of();
+            List<TriggerProcessor.StagedStatement> statements = List.of();
             if (snapshot != null) {
                 ObjectInjectionContext context = new ObjectInjectionContext(
                         snapshot.className(),
                         snapshot.objectHandle(),
                         snapshot.attributes());
-                statements = triggerDispatcher.stage(
+                statements = triggerProcessor.stage(
                         StatementTrigger.Type.OBJECT_DELETE,
                         snapshot.className(),
                         context);
@@ -455,7 +452,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 return;
             }
             objectCache.removeObject(objectHandle);
-            triggerDispatcher.enqueue(statements, xapiClient::sendStatement);
+            triggerProcessor.enqueue(statements, xapiClient::sendStatement);
         } catch (RuntimeException e) {
             logger.error("Error removing cached object {}", theObject, e);
         }
@@ -518,7 +515,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             InteractionInjectionContext context = new InteractionInjectionContext(interactionKey,
                     getMapWithParameterNames(interactionClass, theParameters));
 
-            triggerDispatcher.dispatch(
+            triggerProcessor.dispatch(
                     StatementTrigger.Type.INTERACTION,
                     interactionKey,
                     context,
