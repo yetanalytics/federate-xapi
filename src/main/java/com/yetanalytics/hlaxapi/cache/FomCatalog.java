@@ -10,17 +10,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import javax.xml.xpath.XPathExpressionException;
 
 import org.springframework.stereotype.Component;
 
 /**
- * FOM-derived object metadata used by the SQLite cache.
+ * Canonical object and interaction metadata derived from the FOM.
  */
 @Component
 public final class FomCatalog {
 
     private final Map<String, ObjectClassDef> classesByName;
+    private final Map<String, List<ObjectClassDef>> classesByLocalName;
+    private final Map<String, InteractionClassDef> interactionsByName;
+    private final Map<String, List<InteractionClassDef>> interactionsByLocalName;
     private final Map<Integer, ObjectClassDef> classesById;
     private final Map<Integer, FomAttribute> attributesById;
 
@@ -29,7 +33,15 @@ public final class FomCatalog {
         for (FOMXML.ObjectClassDefinition definition : fomXml.objectClassDefinitions()) {
             builder.addObjectClass(definition);
         }
-        this.classesByName = builder.classesByName;
+        for (FOMXML.InteractionClassDefinition definition : fomXml.interactionClassDefinitions()) {
+            builder.addInteractionClass(definition);
+        }
+        this.classesByName = Collections.unmodifiableMap(new LinkedHashMap<>(builder.classesByName));
+        this.classesByLocalName = indexByLocalName(classesByName.values(), ObjectClassDef::localName);
+        this.interactionsByName =
+                Collections.unmodifiableMap(new LinkedHashMap<>(builder.interactionsByName));
+        this.interactionsByLocalName =
+                indexByLocalName(interactionsByName.values(), InteractionClassDef::localName);
 
         Map<Integer, ObjectClassDef> byId = new LinkedHashMap<>();
         Map<Integer, FomAttribute> attrsById = new LinkedHashMap<>();
@@ -47,12 +59,50 @@ public final class FomCatalog {
         return classesByName.values();
     }
 
+    /**
+     * Resolves a canonical object class name exactly.
+     */
+    public Optional<ObjectClassDef> canonicalObjectClass(String name) {
+        return Optional.ofNullable(classesByName.get(normalizeName(name)));
+    }
+
+    /**
+     * Temporary compatibility lookup used while runtime callers migrate to canonical names.
+     * Canonical names resolve exactly; local names resolve only when globally unique.
+     */
     public Optional<ObjectClassDef> objectClass(String name) {
-        return Optional.ofNullable(classesByName.get(localName(name)));
+        Optional<ObjectClassDef> canonical = canonicalObjectClass(name);
+        if (canonical.isPresent()) {
+            return canonical;
+        }
+        return uniqueLocalMatch(classesByLocalName.get(localName(name)));
     }
 
     public Optional<ObjectClassDef> objectClass(int id) {
         return Optional.ofNullable(classesById.get(id));
+    }
+
+    public Collection<InteractionClassDef> interactionClasses() {
+        return interactionsByName.values();
+    }
+
+    /**
+     * Resolves a canonical interaction class name exactly.
+     */
+    public Optional<InteractionClassDef> canonicalInteractionClass(String name) {
+        return Optional.ofNullable(interactionsByName.get(normalizeName(name)));
+    }
+
+    /**
+     * Temporary compatibility lookup used while runtime callers migrate to canonical names.
+     * Canonical names resolve exactly; local names resolve only when globally unique.
+     */
+    public Optional<InteractionClassDef> interactionClass(String name) {
+        Optional<InteractionClassDef> canonical = canonicalInteractionClass(name);
+        if (canonical.isPresent()) {
+            return canonical;
+        }
+        return uniqueLocalMatch(interactionsByLocalName.get(localName(name)));
     }
 
     public List<ObjectClassDef> objectClassAndDescendants(String name) {
@@ -141,15 +191,37 @@ public final class FomCatalog {
         if (hlaName == null) {
             return null;
         }
-        String trimmed = hlaName.trim();
+        String trimmed = normalizeName(hlaName);
         int index = trimmed.lastIndexOf('.');
         return index >= 0 ? trimmed.substring(index + 1) : trimmed;
+    }
+
+    private static String normalizeName(String name) {
+        return name == null ? null : name.trim();
+    }
+
+    private static <T> Optional<T> uniqueLocalMatch(List<T> matches) {
+        return matches != null && matches.size() == 1
+                ? Optional.of(matches.get(0))
+                : Optional.empty();
+    }
+
+    private static <T> Map<String, List<T>> indexByLocalName(
+            Collection<T> values,
+            Function<T, String> localName) {
+        Map<String, List<T>> mutable = new LinkedHashMap<>();
+        for (T value : values) {
+            mutable.computeIfAbsent(localName.apply(value), ignored -> new ArrayList<>()).add(value);
+        }
+        Map<String, List<T>> immutable = new LinkedHashMap<>();
+        mutable.forEach((name, matches) -> immutable.put(name, List.copyOf(matches)));
+        return Collections.unmodifiableMap(immutable);
     }
 
     private boolean isSameOrDescendant(ObjectClassDef candidate, ObjectClassDef requestedClass) {
         ObjectClassDef current = candidate;
         while (current != null) {
-            if (current.localName().equals(requestedClass.localName())) {
+            if (current.hlaName().equals(requestedClass.hlaName())) {
                 return true;
             }
             current = classesByName.get(current.parentName());
@@ -206,11 +278,43 @@ public final class FomCatalog {
             boolean leaf) {
     }
 
+    public record InteractionClassDef(
+            String hlaName,
+            String localName,
+            String parentName,
+            List<FomParameter> parameters) {
+
+        public InteractionClassDef {
+            parameters = List.copyOf(parameters);
+        }
+
+        public Optional<FomParameter> parameter(String pathKey) {
+            String localPath = pathKey == null ? null : pathKey.trim();
+            String wildcardPath = wildcardArrayIndexes(localPath);
+            for (FomParameter parameter : parameters) {
+                if (parameter.pathKey().equals(localPath) || parameter.pathKey().equals(wildcardPath)) {
+                    return Optional.of(parameter);
+                }
+            }
+            return Optional.empty();
+        }
+    }
+
+    public record FomParameter(
+            String parameterName,
+            String pathKey,
+            String dataType,
+            String primitiveType,
+            boolean leaf) {
+    }
+
     private static final class CatalogBuilder {
 
         private final FOMXML fomXml;
         private final Map<String, ObjectClassDef> classesByName = new LinkedHashMap<>();
         private final Map<String, List<AttributeSource>> attributesByClassName = new LinkedHashMap<>();
+        private final Map<String, InteractionClassDef> interactionsByName = new LinkedHashMap<>();
+        private final Map<String, List<ParameterSource>> parametersByClassName = new LinkedHashMap<>();
         private int nextClassId = 1;
         private int nextAttributeId = 1;
 
@@ -220,11 +324,6 @@ public final class FomCatalog {
 
         private void addObjectClass(FOMXML.ObjectClassDefinition definition) {
             String localClassName = localName(definition.name());
-            String localParentName = localName(definition.parentName());
-            ObjectClassDef parentClass = classesByName.get(localParentName);
-            String hlaName = parentClass == null || "HLAobjectRoot".equals(parentClass.localName())
-                    ? localClassName
-                    : parentClass.hlaName() + "." + localClassName;
 
             List<AttributeSource> allAttributes = new ArrayList<>();
             if (definition.parentName() != null) {
@@ -244,11 +343,33 @@ public final class FomCatalog {
             ObjectClassDef classDef =
                     new ObjectClassDef(
                             classId,
-                            hlaName,
+                            definition.name(),
                             localClassName,
-                            localParentName,
+                            definition.parentName(),
                             flattened);
-            classesByName.put(classDef.localName(), classDef);
+            classesByName.put(classDef.hlaName(), classDef);
+        }
+
+        private void addInteractionClass(FOMXML.InteractionClassDefinition definition) {
+            List<ParameterSource> allParameters = new ArrayList<>();
+            if (definition.parentName() != null) {
+                allParameters.addAll(parametersByClassName.getOrDefault(definition.parentName(), List.of()));
+            }
+            for (FOMXML.InteractionParameterDefinition parameter : definition.parameters()) {
+                allParameters.add(new ParameterSource(parameter.name(), parameter.dataType()));
+            }
+            parametersByClassName.put(definition.name(), List.copyOf(allParameters));
+
+            List<FomParameter> flattened = new ArrayList<>();
+            for (ParameterSource parameter : allParameters) {
+                flattenParameter(parameter.name(), parameter.name(), parameter.dataType(), flattened);
+            }
+            InteractionClassDef classDef = new InteractionClassDef(
+                    definition.name(),
+                    localName(definition.name()),
+                    definition.parentName(),
+                    flattened);
+            interactionsByName.put(classDef.hlaName(), classDef);
         }
 
         private void flattenAttribute(
@@ -285,6 +406,36 @@ public final class FomCatalog {
             }
         }
 
+        private void flattenParameter(
+                String parameterName,
+                String pathKey,
+                String dataType,
+                List<FomParameter> parameters) {
+            String primitive = primitiveType(dataType);
+            List<FOMXML.FixedRecordField> fields = fixedRecordFields(dataType);
+            String arrayElementType = arrayElementType(dataType);
+            boolean leaf = primitive != null || fields.isEmpty() && arrayElementType == null;
+
+            parameters.add(new FomParameter(
+                    parameterName,
+                    pathKey,
+                    dataType,
+                    primitive,
+                    leaf));
+
+            if (!fields.isEmpty()) {
+                for (FOMXML.FixedRecordField field : fields) {
+                    flattenParameter(
+                            parameterName,
+                            pathKey + "." + field.name,
+                            field.dataType,
+                            parameters);
+                }
+            } else if (arrayElementType != null) {
+                flattenParameter(parameterName, pathKey + "[]", arrayElementType, parameters);
+            }
+        }
+
         private String primitiveType(String dataType) {
             try {
                 return fomXml.resolvePrimitiveType(dataType);
@@ -317,6 +468,9 @@ public final class FomCatalog {
         }
 
         private record AttributeSource(String name, String dataType) {
+        }
+
+        private record ParameterSource(String name, String dataType) {
         }
     }
 }

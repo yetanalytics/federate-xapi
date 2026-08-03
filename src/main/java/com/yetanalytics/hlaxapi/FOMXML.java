@@ -252,6 +252,9 @@ public class FOMXML {
     /**
      * Return the object-class hierarchy as immutable, XML-free definitions.
      *
+     * <p>Class and parent names are canonical, root-relative HLA names. The
+     * standard {@code HLAobjectRoot} prefix is omitted for its descendants.
+     *
      * <p>Only attributes declared directly on a class are included. Consumers that
      * need inherited attributes can apply inheritance using {@link
      * ObjectClassDefinition#parentName()} without accessing the raw FOM document.
@@ -280,6 +283,7 @@ public class FOMXML {
         if (className == null) {
             return;
         }
+        String canonicalName = canonicalClassName(className, parentName, "HLAobjectRoot");
 
         List<ObjectAttributeDefinition> attributes = new ArrayList<>();
         for (Element attribute : childElements(objectClass, "attribute")) {
@@ -289,11 +293,69 @@ public class FOMXML {
                 attributes.add(new ObjectAttributeDefinition(attributeName, dataType));
             }
         }
-        definitions.add(new ObjectClassDefinition(className, parentName, attributes));
+        definitions.add(new ObjectClassDefinition(canonicalName, parentName, attributes));
 
         for (Element childClass : childElements(objectClass, "objectClass")) {
-            collectObjectClassDefinitions(childClass, className, definitions);
+            collectObjectClassDefinitions(childClass, canonicalName, definitions);
         }
+    }
+
+    /**
+     * Return the interaction-class hierarchy as immutable, XML-free definitions.
+     *
+     * <p>Class and parent names are canonical, root-relative HLA names. The
+     * standard {@code HLAinteractionRoot} prefix is omitted for its descendants.
+     * Only parameters declared directly on a class are included.
+     */
+    public List<InteractionClassDefinition> interactionClassDefinitions() {
+        if (doc == null || doc.getDocumentElement() == null) {
+            return List.of();
+        }
+        Element interactions = firstChildElement(doc.getDocumentElement(), "interactions");
+        if (interactions == null) {
+            return List.of();
+        }
+
+        List<InteractionClassDefinition> definitions = new ArrayList<>();
+        for (Element interactionClass : childElements(interactions, "interactionClass")) {
+            collectInteractionClassDefinitions(interactionClass, null, definitions);
+        }
+        return List.copyOf(definitions);
+    }
+
+    private void collectInteractionClassDefinitions(
+            Element interactionClass,
+            String parentName,
+            List<InteractionClassDefinition> definitions) {
+        String className = childText(interactionClass, "name");
+        if (className == null) {
+            return;
+        }
+        String canonicalName = canonicalClassName(className, parentName, "HLAinteractionRoot");
+
+        List<InteractionParameterDefinition> parameters = new ArrayList<>();
+        for (Element parameter : childElements(interactionClass, "parameter")) {
+            String parameterName = childText(parameter, "name");
+            String dataType = childText(parameter, "dataType");
+            if (parameterName != null && dataType != null) {
+                parameters.add(new InteractionParameterDefinition(parameterName, dataType));
+            }
+        }
+        definitions.add(new InteractionClassDefinition(canonicalName, parentName, parameters));
+
+        for (Element childClass : childElements(interactionClass, "interactionClass")) {
+            collectInteractionClassDefinitions(childClass, canonicalName, definitions);
+        }
+    }
+
+    private static String canonicalClassName(
+            String localClassName,
+            String parentName,
+            String rootName) {
+        if (parentName == null || parentName.equals(rootName)) {
+            return localClassName;
+        }
+        return parentName + "." + localClassName;
     }
 
     private static String childText(Element parent, String tagName) {
@@ -427,5 +489,18 @@ public class FOMXML {
     }
 
     public record ObjectAttributeDefinition(String name, String dataType) {
+    }
+
+    public record InteractionClassDefinition(
+            String name,
+            String parentName,
+            List<InteractionParameterDefinition> parameters) {
+
+        public InteractionClassDefinition {
+            parameters = List.copyOf(parameters);
+        }
+    }
+
+    public record InteractionParameterDefinition(String name, String dataType) {
     }
 }
