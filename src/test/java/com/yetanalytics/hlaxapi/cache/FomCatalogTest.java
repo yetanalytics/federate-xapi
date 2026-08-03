@@ -16,7 +16,7 @@ class FomCatalogTest {
     @Test
     void flattensPrimitiveAliasesEnumsAndFixedRecords() {
         FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
-        FomCatalog.ObjectClassDef rabbit = catalog.objectClass("Rabbit").orElseThrow();
+        FomCatalog.ObjectClassDef rabbit = catalog.objectClass("SimEntity.Rabbit").orElseThrow();
 
         assertTrue(rabbit.attribute("Hunger").orElseThrow().leaf());
         assertEquals("HLAinteger32BE", rabbit.attribute("Hunger").orElseThrow().primitiveType());
@@ -37,7 +37,7 @@ class FomCatalogTest {
         assertEquals("HLAASCIIstring", simEntity.attribute("EntityId").orElseThrow().primitiveType());
         assertEquals("HLAinteger32BE", simEntity.attribute("Position.X").orElseThrow().primitiveType());
 
-        FomCatalog.ObjectClassDef rabbit = catalog.objectClass("Rabbit").orElseThrow();
+        FomCatalog.ObjectClassDef rabbit = catalog.objectClass("SimEntity.Rabbit").orElseThrow();
         assertEquals("SimEntity", rabbit.parentName());
         assertEquals("HLAASCIIstring", rabbit.attribute("EntityId").orElseThrow().primitiveType());
         assertEquals("HLAinteger32BE", rabbit.attribute("Hunger").orElseThrow().primitiveType());
@@ -50,12 +50,12 @@ class FomCatalogTest {
         assertEquals(
                 List.of("SimEntity", "Carrot", "Rabbit", "Wolf"),
                 catalog.objectClassAndDescendants("SimEntity").stream()
-                        .map(FomCatalog.ObjectClassDef::localName)
+                        .map(definition -> FomCatalog.shortName(definition.hlaName()))
                         .toList());
         assertEquals(
                 List.of("Rabbit"),
-                catalog.objectClassAndDescendants("Rabbit").stream()
-                        .map(FomCatalog.ObjectClassDef::localName)
+                catalog.objectClassAndDescendants("SimEntity.Rabbit").stream()
+                        .map(definition -> FomCatalog.shortName(definition.hlaName()))
                         .toList());
         assertEquals(List.of(), catalog.objectClassAndDescendants("MissingObject"));
     }
@@ -64,12 +64,12 @@ class FomCatalogTest {
     void matchesObjectClassesThroughTheirFomHierarchy() {
         FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
 
-        assertTrue(catalog.isSameOrDescendant("Rabbit", "Rabbit"));
-        assertTrue(catalog.isSameOrDescendant("Rabbit", "SimEntity"));
-        assertFalse(catalog.isSameOrDescendant("SimEntity", "Rabbit"));
-        assertFalse(catalog.isSameOrDescendant("Wolf", "Rabbit"));
+        assertTrue(catalog.isSameOrDescendant("SimEntity.Rabbit", "SimEntity.Rabbit"));
+        assertTrue(catalog.isSameOrDescendant("SimEntity.Rabbit", "SimEntity"));
+        assertFalse(catalog.isSameOrDescendant("SimEntity", "SimEntity.Rabbit"));
+        assertFalse(catalog.isSameOrDescendant("SimEntity.Wolf", "SimEntity.Rabbit"));
         assertFalse(catalog.isSameOrDescendant("MissingObject", "SimEntity"));
-        assertFalse(catalog.isSameOrDescendant("Rabbit", "MissingObject"));
+        assertFalse(catalog.isSameOrDescendant("SimEntity.Rabbit", "MissingObject"));
     }
 
     @Test
@@ -77,9 +77,9 @@ class FomCatalogTest {
         FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
 
         assertEquals(1, catalog.objectClassDepth("SimEntity"));
-        assertEquals(2, catalog.objectClassDepth("Carrot"));
-        assertEquals(2, catalog.objectClassDepth("Rabbit"));
-        assertEquals(2, catalog.objectClassDepth("Wolf"));
+        assertEquals(2, catalog.objectClassDepth("SimEntity.Carrot"));
+        assertEquals(2, catalog.objectClassDepth("SimEntity.Rabbit"));
+        assertEquals(2, catalog.objectClassDepth("SimEntity.Wolf"));
         assertEquals(-1, catalog.objectClassDepth("MissingObject"));
     }
 
@@ -89,9 +89,11 @@ class FomCatalogTest {
 
         assertEquals("HLAobjectRoot", catalog.objectClass("HLAobjectRoot").orElseThrow().hlaName());
         assertEquals("SimEntity", catalog.objectClass("SimEntity").orElseThrow().hlaName());
-        assertEquals("SimEntity.Carrot", catalog.objectClass("Carrot").orElseThrow().hlaName());
-        assertEquals("SimEntity.Rabbit", catalog.objectClass("Rabbit").orElseThrow().hlaName());
-        assertEquals("SimEntity.Wolf", catalog.objectClass("Wolf").orElseThrow().hlaName());
+        assertEquals("SimEntity.Carrot", catalog.objectClass("SimEntity.Carrot").orElseThrow().hlaName());
+        assertEquals("SimEntity.Rabbit", catalog.objectClass("SimEntity.Rabbit").orElseThrow().hlaName());
+        assertEquals("SimEntity.Wolf", catalog.objectClass("SimEntity.Wolf").orElseThrow().hlaName());
+        assertTrue(catalog.objectClass("Rabbit").isEmpty());
+        assertTrue(catalog.objectClass(" SimEntity.Rabbit ").isEmpty());
     }
 
     @Test

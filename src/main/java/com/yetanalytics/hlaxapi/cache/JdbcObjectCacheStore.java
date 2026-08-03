@@ -17,7 +17,7 @@ import java.util.Optional;
 
 final class JdbcObjectCacheStore implements ObjectCacheStore {
 
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
 
     private final ObjectCacheQueries queries;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -45,7 +45,7 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
             statement.setInt(3, clazz.id());
             statement.setString(4, java.time.Instant.now().toString());
             statement.executeUpdate();
-            return loadObject(objectHandle, clazz.localName());
+            return loadObject(objectHandle, clazz.hlaName());
         } catch (SQLException e) {
             throw new IllegalStateException("Could not upsert object instance " + objectHandle, e);
         }
@@ -63,7 +63,7 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
                 while (resultSet.next()) {
                     found = true;
                     objectName = resultSet.getString("object_name");
-                    className = resultSet.getString("local_name");
+                    className = resultSet.getString("hla_name");
                     String attributeName = resultSet.getString("attribute_name");
                     byte[] rawBytes = resultSet.getBytes("raw_bytes");
                     if (attributeName != null && rawBytes != null) {
@@ -141,7 +141,7 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
                             resultSet.getLong("id"),
                             resultSet.getString("object_handle"),
                             resultSet.getString("object_name"),
-                            resultSet.getString("local_name")));
+                            resultSet.getString("hla_name")));
                 }
             }
         } catch (SQLException e) {
@@ -248,8 +248,7 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
             for (FomCatalog.ObjectClassDef clazz : catalog.objectClasses()) {
                 statement.setInt(1, clazz.id());
                 statement.setString(2, clazz.hlaName());
-                statement.setString(3, clazz.localName());
-                statement.setString(4, clazz.parentName());
+                statement.setString(3, clazz.parentName());
                 statement.addBatch();
             }
             statement.executeBatch();

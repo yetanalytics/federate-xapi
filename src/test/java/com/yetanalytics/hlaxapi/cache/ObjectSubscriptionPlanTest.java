@@ -37,7 +37,7 @@ class ObjectSubscriptionPlanTest {
                 {"name":["query","SimEntity",["FirstName"],null]}
                 """;
         TrackedObject trackedRabbit = new TrackedObject();
-        trackedRabbit.clazz = "Rabbit";
+        trackedRabbit.clazz = "SimEntity.Rabbit";
         trackedRabbit.attributes = List.of("Hunger");
         ObjectCacheConfig cacheConfig = new ObjectCacheConfig();
         cacheConfig.trackedObjects = List.of(trackedRabbit);
@@ -48,19 +48,19 @@ class ObjectSubscriptionPlanTest {
         ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
 
         assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("SimEntity"));
-        assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("Carrot"));
-        assertEquals(Set.of("FirstName", "Hunger"), plan.cacheSubscriptions().get("Rabbit"));
-        assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("Wolf"));
+        assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("SimEntity.Carrot"));
+        assertEquals(Set.of("FirstName", "Hunger"), plan.cacheSubscriptions().get("SimEntity.Rabbit"));
+        assertEquals(Set.of("FirstName"), plan.cacheSubscriptions().get("SimEntity.Wolf"));
         assertTrue(plan.eventSubscriptions().isEmpty());
         assertEquals(Set.of("FirstName"), plan.effectiveAttributes("SimEntity"));
-        assertEquals(Set.of("FirstName", "Hunger"), plan.effectiveAttributes("Rabbit"));
-        assertEquals(Set.of("FirstName"), plan.effectiveAttributes("Wolf"));
+        assertEquals(Set.of("FirstName", "Hunger"), plan.effectiveAttributes("SimEntity.Rabbit"));
+        assertEquals(Set.of("FirstName"), plan.effectiveAttributes("SimEntity.Wolf"));
         assertThrows(
                 UnsupportedOperationException.class,
-                () -> plan.subscriptions().put("Wolf", Set.of("Hunger")));
+                () -> plan.subscriptions().put("SimEntity.Wolf", Set.of("Hunger")));
         assertThrows(
                 UnsupportedOperationException.class,
-                () -> plan.subscriptions().get("Rabbit").add("EntityId"));
+                () -> plan.subscriptions().get("SimEntity.Rabbit").add("EntityId"));
     }
 
     @Test
@@ -120,7 +120,7 @@ class ObjectSubscriptionPlanTest {
                 catalog.objectClassAndDescendants("SimEntity")) {
             assertEquals(
                     Set.of("EntityId", "FirstName", "Position"),
-                    plan.cacheSubscriptions().get(clazz.localName()));
+                    plan.cacheSubscriptions().get(clazz.hlaName()));
         }
         assertCompleteHierarchy(plan.eventSubscriptions());
     }
@@ -142,7 +142,7 @@ class ObjectSubscriptionPlanTest {
                 catalog.objectClassAndDescendants("SimEntity")) {
             assertEquals(
                     Set.of("EntityId", "Position"),
-                    explicitPlan.cacheSubscriptions().get(clazz.localName()));
+                    explicitPlan.cacheSubscriptions().get(clazz.hlaName()));
         }
 
         TrackedObject all = new TrackedObject();
@@ -176,7 +176,7 @@ class ObjectSubscriptionPlanTest {
                 catalog.objectClassAndDescendants("SimEntity")) {
             assertEquals(
                     Set.copyOf(clazz.topLevelAttributeNames()),
-                    subscriptions.get(clazz.localName()));
+                    subscriptions.get(clazz.hlaName()));
         }
     }
 }

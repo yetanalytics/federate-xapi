@@ -85,6 +85,7 @@ import hla.rti1516e.exceptions.UnsupportedCallbackModel;
 public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInterface {
 
     private static final Logger logger = LogManager.getLogger(HlaInterfaceImpl.class);
+    private static final String OBJECT_ROOT_PREFIX = "HLAobjectRoot.";
 
     private RTIambassador ambassador;
 
@@ -275,7 +276,8 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         }
         String className;
         try {
-            className = StringUtils.substringAfterLast(ambassador.getObjectClassName(theObjectClass), ".");
+            className = rootRelativeObjectClassName(
+                    ambassador.getObjectClassName(theObjectClass));
         } catch (InvalidObjectClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError e) {
             logger.error("Error resolving discovered object {}", objectName, e);
             return;
@@ -366,7 +368,8 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         }
         try {
             ObjectClassHandle classHandle = ambassador.getKnownObjectClassHandle(theObject);
-            String className = StringUtils.substringAfterLast(ambassador.getObjectClassName(classHandle), ".");
+            String className = rootRelativeObjectClassName(
+                    ambassador.getObjectClassName(classHandle));
             Map<String, byte[]> attributes = new HashMap<>();
             for (AttributeHandle attributeHandle : theAttributes.keySet()) {
                 String attributeName = ambassador.getAttributeName(classHandle, attributeHandle);
@@ -456,6 +459,12 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         } catch (RuntimeException e) {
             logger.error("Error removing cached object {}", theObject, e);
         }
+    }
+
+    private String rootRelativeObjectClassName(String className) {
+        return className != null && className.startsWith(OBJECT_ROOT_PREFIX)
+                ? className.substring(OBJECT_ROOT_PREFIX.length())
+                : className;
     }
 
     /*

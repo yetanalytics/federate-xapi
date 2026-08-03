@@ -74,7 +74,7 @@ class TriggerProcessorCriteriaTest {
                                 ComparisonOperator.GT,
                                 new ValueExpression(10))));
         StatementTrigger trigger = trigger(criteria, "{\"actor\":{\"name\":[\"lookup\",\"subject\",[\"Name\"]]}}");
-        trigger.lookups = Map.of("subject", lookup("Rabbit"));
+        trigger.lookups = Map.of("subject", lookup("SimEntity.Rabbit"));
 
         TriggerProcessingResult result = new TriggerProcessor(handler).processTrigger(trigger, context());
 
@@ -86,7 +86,7 @@ class TriggerProcessorCriteriaTest {
     @Test
     void oneLookupObjectIsSharedByCriteriaAndStatementRendering() {
         AtomicInteger lookupLoads = new AtomicInteger();
-        CachedObject rabbit = new CachedObject(7, "handle-7", "rabbit-7", "Rabbit");
+        CachedObject rabbit = new CachedObject(7, "handle-7", "rabbit-7", "SimEntity.Rabbit");
         InjectionHandler handler = new InjectionHandler() {
             @Override
             public Optional<CachedObject> resolveLookup(ObjectLookup lookup, InjectionContext context) {
@@ -108,7 +108,7 @@ class TriggerProcessorCriteriaTest {
                         ComparisonOperator.GT,
                         new ValueExpression(50)),
                 "{\"actor\":{\"name\":[\"lookup\",\"subject\",[\"EntityId\"]]}}");
-        trigger.lookups = Map.of("subject", lookup("Rabbit"));
+        trigger.lookups = Map.of("subject", lookup("SimEntity.Rabbit"));
 
         TriggerProcessingResult result = new TriggerProcessor(handler).processTrigger(trigger, context());
 
@@ -147,9 +147,9 @@ class TriggerProcessorCriteriaTest {
                         List.of(
                                 equalsNull(new LookupExpression("subject", target("First"))),
                                 equalsNull(new LookupExpression("subject", target("Second"))),
-                                equalsNull(new QueryExpression("Rabbit", target("Nickname"), null)))),
+                                equalsNull(new QueryExpression("SimEntity.Rabbit", target("Nickname"), null)))),
                 "{}");
-        trigger.lookups = Map.of("subject", lookup("Rabbit"));
+        trigger.lookups = Map.of("subject", lookup("SimEntity.Rabbit"));
 
         TriggerProcessingResult result = new TriggerProcessor(handler).processTrigger(trigger, context());
 

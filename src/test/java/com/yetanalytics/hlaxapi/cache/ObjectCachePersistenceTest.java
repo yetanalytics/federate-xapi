@@ -56,7 +56,7 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void initializesSchemaAndSeedsFomMetadata() throws SQLException {
         try (ObjectCache cache = newCache()) {
-            assertEquals(1, scalarLong(cache, "SELECT schema_version FROM object_cache_metadata"));
+            assertEquals(2, scalarLong(cache, "SELECT schema_version FROM object_cache_metadata"));
             assertTrue(count(cache, "SELECT COUNT(*) FROM fom_object_class") > 0);
             assertTrue(count(cache, "SELECT COUNT(*) FROM fom_attribute WHERE path_key = 'Position.X'") > 0);
         }
@@ -68,9 +68,9 @@ abstract class ObjectCachePersistenceTest {
         byte[] secondHunger = encoded(encoderFactory.createHLAinteger32BE(40));
 
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", firstHunger);
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", secondHunger);
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", firstHunger);
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", secondHunger);
 
             assertEquals(40, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
             assertEquals(1, count(cache, """
@@ -92,7 +92,7 @@ abstract class ObjectCachePersistenceTest {
         try (ObjectCache cache = newCache()) {
             cache.reflectAttributeValues(
                     "object-1",
-                    "Rabbit",
+                    "SimEntity.Rabbit",
                     Map.of(
                             "EntityId", entityId,
                             "Hunger", hunger,
@@ -117,7 +117,7 @@ abstract class ObjectCachePersistenceTest {
 
         try (ObjectCache cache = newCache(
                 "object-snapshot",
-                enabledConfig(),
+                enabledConfig("Rabbit"),
                 dynamicArrayCatalog,
                 dynamicArrayFomXml)) {
             cache.discoverObject("object-1", "Rabbit One", "Rabbit");
@@ -153,13 +153,13 @@ abstract class ObjectCachePersistenceTest {
         byte[] newHunger = encoded(encoderFactory.createHLAinteger32BE(75));
 
         try (ObjectCache cache = newCache()) {
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", oldHunger);
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", oldHunger);
 
             assertThrows(
                     IllegalArgumentException.class,
                     () -> cache.reflectAttributeValues(
                             "object-1",
-                            "Rabbit",
+                            "SimEntity.Rabbit",
                             Map.of(
                                     "Hunger", newHunger,
                                     "NotInTheFom", new byte[] { 1 })));
@@ -171,7 +171,7 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void ignoresEmptyReflections() throws SQLException {
         try (ObjectCache cache = newCache()) {
-            cache.reflectAttributeValues("object-1", "Rabbit", Map.of());
+            cache.reflectAttributeValues("object-1", "SimEntity.Rabbit", Map.of());
 
             assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_instance"));
             assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_attribute_current"));
@@ -187,11 +187,11 @@ abstract class ObjectCachePersistenceTest {
         try (ObjectCache cache = newCache()) {
             cache.reflectAttributeValues(
                     "object-1",
-                    "Rabbit",
+                    "SimEntity.Rabbit",
                     Map.of(
                             "EntityId", oldEntityId,
                             "Hunger", oldHunger));
-            FomCatalog.ObjectClassDef rabbit = catalog.objectClass("Rabbit").orElseThrow();
+            FomCatalog.ObjectClassDef rabbit = catalog.objectClass("SimEntity.Rabbit").orElseThrow();
             ReflectedAttributeValues hunger = new ReflectedAttributeValues(
                     "Hunger",
                     List.of(new DecodedAttributeValue(
@@ -229,7 +229,7 @@ abstract class ObjectCachePersistenceTest {
     void rollsBackObjectValuesAndDynamicMetadataWhenAReflectionFails() throws SQLException {
         try (ObjectCache cache = newCache(
                 "reflection-rollback",
-                enabledConfig(),
+                enabledConfig("Rabbit"),
                 dynamicArrayCatalog,
                 dynamicArrayFomXml)) {
             FomCatalog.ObjectClassDef rabbit = dynamicArrayCatalog.objectClass("Rabbit").orElseThrow();
@@ -280,8 +280,8 @@ abstract class ObjectCachePersistenceTest {
         byte[] position = position(12, 8);
 
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Position", position);
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Position", position);
 
             assertEquals(12, cache.findCurrentValue("object-1", "Position.X").orElseThrow().value());
             assertEquals(8, cache.findCurrentValue("object-1", "Position.Y").orElseThrow().value());
@@ -295,7 +295,7 @@ abstract class ObjectCachePersistenceTest {
 
         try (ObjectCache cache = newCache(
                 "dynamic-array",
-                enabledConfig(),
+                enabledConfig("Rabbit"),
                 dynamicArrayCatalog,
                 dynamicArrayFomXml)) {
             cache.discoverObject("object-1", "Rabbit One", "Rabbit");
@@ -355,17 +355,17 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void queryServiceEvaluatesCriteriaAndExcludesRemovedObjects() {
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
                     "rabbit-one")));
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(75)));
-            cache.reflectAttributeValue("object-1", "Rabbit", "Position", position(12, 8));
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(75)));
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Position", position(12, 8));
 
-            cache.discoverObject("object-2", "Rabbit Two", "Rabbit");
-            cache.reflectAttributeValue("object-2", "Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
+            cache.discoverObject("object-2", "Rabbit Two", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-2", "SimEntity.Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
                     "rabbit-two")));
-            cache.reflectAttributeValue("object-2", "Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(20)));
-            cache.reflectAttributeValue("object-2", "Rabbit", "Position", position(20, 5));
+            cache.reflectAttributeValue("object-2", "SimEntity.Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(20)));
+            cache.reflectAttributeValue("object-2", "SimEntity.Rabbit", "Position", position(20, 5));
 
             Criterion hungerCriteria = new Criterion(
                     new Target(List.of("Hunger")),
@@ -379,11 +379,11 @@ abstract class ObjectCachePersistenceTest {
 
             assertEquals(
                     List.of("rabbit-one"),
-                    cache.queryService().findValues("Rabbit", new Target(List.of("EntityId")), hungerCriteria));
+                    cache.queryService().findValues("SimEntity.Rabbit", new Target(List.of("EntityId")), hungerCriteria));
             assertEquals(
                     List.of(8),
-                    cache.queryService().findValues("Rabbit", new Target(List.of("Position", "Y")), criteria));
-            CachedObject matched = cache.queryService().findFirstObject("Rabbit", criteria).orElseThrow();
+                    cache.queryService().findValues("SimEntity.Rabbit", new Target(List.of("Position", "Y")), criteria));
+            CachedObject matched = cache.queryService().findFirstObject("SimEntity.Rabbit", criteria).orElseThrow();
             assertEquals("object-1", matched.objectHandle());
             assertEquals(
                     8,
@@ -391,7 +391,7 @@ abstract class ObjectCachePersistenceTest {
 
             cache.removeObject("object-1");
 
-            assertFalse(cache.queryService().findFirstValue("Rabbit", new Target(List.of("Hunger")), criteria)
+            assertFalse(cache.queryService().findFirstValue("SimEntity.Rabbit", new Target(List.of("Hunger")), criteria)
                     .isPresent());
         }
     }
@@ -400,14 +400,14 @@ abstract class ObjectCachePersistenceTest {
     void baseClassQueryFindsObjectsCachedAsDescendantClasses() {
         try (ObjectCache cache = newCache()) {
             cache.discoverObject("entity-1", "Entity One", "SimEntity");
-            cache.discoverObject("rabbit-1", "Rabbit One", "Rabbit");
+            cache.discoverObject("rabbit-1", "Rabbit One", "SimEntity.Rabbit");
             cache.reflectAttributeValues(
                     "rabbit-1",
-                    "Rabbit",
+                    "SimEntity.Rabbit",
                     Map.of(
                             "EntityId", encoded(encoderFactory.createHLAASCIIstring("rabbit-one")),
                             "FirstName", encoded(encoderFactory.createHLAunicodeString("Alice"))));
-            cache.discoverObject("wolf-1", "Wolf One", "Wolf");
+            cache.discoverObject("wolf-1", "Wolf One", "SimEntity.Wolf");
             Criterion entityId = new Criterion(
                     new Target(List.of("EntityId")),
                     ComparisonOperator.EQ,
@@ -416,7 +416,7 @@ abstract class ObjectCachePersistenceTest {
             CachedObject matched =
                     cache.queryService().findFirstObject("SimEntity", entityId).orElseThrow();
 
-            assertEquals("Rabbit", matched.className());
+            assertEquals("SimEntity.Rabbit", matched.className());
             assertEquals(
                     "Alice",
                     cache.queryService()
@@ -429,7 +429,7 @@ abstract class ObjectCachePersistenceTest {
                             .toList());
             assertEquals(
                     List.of("rabbit-1"),
-                    cache.currentObjects("Rabbit").stream()
+                    cache.currentObjects("SimEntity.Rabbit").stream()
                             .map(CachedObject::objectHandle)
                             .toList());
 
@@ -448,7 +448,7 @@ abstract class ObjectCachePersistenceTest {
         try (ObjectCache cache = newCache()) {
             cache.reflectAttributeValues(
                     "rabbit-1",
-                    "Rabbit",
+                    "SimEntity.Rabbit",
                     Map.of(
                             "EntityId", encoded(encoderFactory.createHLAASCIIstring("rabbit-one")),
                             "FirstName", encoded(encoderFactory.createHLAunicodeString("Alice"))));
@@ -487,7 +487,7 @@ abstract class ObjectCachePersistenceTest {
     void previousResolutionSupportsNestedArraysCachedNullAndMissingValues() throws Exception {
         try (ObjectCache cache = newCache(
                 "previous-resolution",
-                enabledConfig(),
+                enabledConfig("Rabbit"),
                 dynamicArrayCatalog,
                 dynamicArrayFomXml)) {
             cache.reflectAttributeValues(
@@ -554,9 +554,9 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void queryServiceDistinguishesPresentNullFromMissingValue() {
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", new byte[] { 1 });
-            CachedObject matched = cache.queryService().findFirstObject("Rabbit", null).orElseThrow();
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", new byte[] { 1 });
+            CachedObject matched = cache.queryService().findFirstObject("SimEntity.Rabbit", null).orElseThrow();
 
             ValueResolution presentNull = cache.queryService().findValueResolution(
                     matched,
@@ -574,8 +574,8 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void persistentCacheStartsFreshOnInitialization() throws SQLException {
         try (ObjectCache cache = newCache("fresh-start")) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger",
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger",
                     encoded(encoderFactory.createHLAinteger32BE(75)));
 
             assertEquals(1, count(cache, "SELECT COUNT(*) FROM object_instance"));
@@ -586,6 +586,59 @@ abstract class ObjectCachePersistenceTest {
             assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_instance"));
             assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_attribute_current"));
             assertTrue(count(cache, "SELECT COUNT(*) FROM fom_object_class") > 0);
+        }
+    }
+
+    @Test
+    void keepsDuplicateLocalClassNamesIsolatedByCanonicalIdentity() throws SQLException {
+        FOMXML ambiguousFomXml = new FOMXML(
+                new SimulationConfig(
+                        null,
+                        null,
+                        null,
+                        null,
+                        "src/test/resources/config/AmbiguousClassNamesFOM.xml"),
+                decoderRegistry);
+        FomCatalog ambiguousCatalog = new FomCatalog(ambiguousFomXml);
+        ObjectCacheConfig objectCacheConfig = new ObjectCacheConfig();
+        objectCacheConfig.trackedObjects = List.of(
+                trackedObject("SimEntity.Rabbit"),
+                trackedObject("SomeOtherSuperclass.Rabbit"));
+        XapiConfig config = new XapiConfig();
+        config.objectCacheConfig = objectCacheConfig;
+
+        try (ObjectCache cache = newCache(
+                "duplicate-local-names",
+                config,
+                ambiguousCatalog,
+                ambiguousFomXml)) {
+            cache.discoverObject("entity-rabbit", "Entity Rabbit", "SimEntity.Rabbit");
+            cache.reflectAttributeValue(
+                    "entity-rabbit",
+                    "SimEntity.Rabbit",
+                    "Hunger",
+                    encoded(encoderFactory.createHLAinteger32BE(12)));
+            cache.discoverObject(
+                    "other-rabbit",
+                    "Other Rabbit",
+                    "SomeOtherSuperclass.Rabbit");
+            cache.reflectAttributeValue(
+                    "other-rabbit",
+                    "SomeOtherSuperclass.Rabbit",
+                    "Speed",
+                    encoded(encoderFactory.createHLAinteger32BE(34)));
+
+            CachedObject entityRabbit = cache.currentObjects("SimEntity.Rabbit").get(0);
+            CachedObject otherRabbit = cache.currentObjects("SomeOtherSuperclass.Rabbit").get(0);
+            assertEquals("SimEntity.Rabbit", entityRabbit.className());
+            assertEquals("SomeOtherSuperclass.Rabbit", otherRabbit.className());
+            assertEquals(12, cache.findValue(entityRabbit, new Target(List.of("Hunger"))).orElseThrow());
+            assertEquals(34, cache.findValue(otherRabbit, new Target(List.of("Speed"))).orElseThrow());
+            assertEquals(2, count(cache, """
+                    SELECT COUNT(*)
+                    FROM fom_object_class
+                    WHERE hla_name IN ('SimEntity.Rabbit', 'SomeOtherSuperclass.Rabbit')
+                    """));
         }
     }
 
@@ -604,14 +657,23 @@ abstract class ObjectCachePersistenceTest {
             FOMXML cacheFomXml);
 
     protected XapiConfig enabledConfig() {
-        TrackedObject trackedObject = new TrackedObject();
-        trackedObject.clazz = "Rabbit";
-        trackedObject.allAttributes = true;
+        return enabledConfig("SimEntity.Rabbit");
+    }
+
+    protected XapiConfig enabledConfig(String className) {
+        TrackedObject trackedObject = trackedObject(className);
         ObjectCacheConfig objectCacheConfig = new ObjectCacheConfig();
         objectCacheConfig.trackedObjects = List.of(trackedObject);
         XapiConfig config = new XapiConfig();
         config.objectCacheConfig = objectCacheConfig;
         return config;
+    }
+
+    private TrackedObject trackedObject(String className) {
+        TrackedObject trackedObject = new TrackedObject();
+        trackedObject.clazz = className;
+        trackedObject.allAttributes = true;
+        return trackedObject;
     }
 
     protected byte[] position(int x, int y) {

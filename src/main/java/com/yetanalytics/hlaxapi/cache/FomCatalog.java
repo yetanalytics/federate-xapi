@@ -22,9 +22,8 @@ import org.springframework.stereotype.Component;
 public final class FomCatalog {
 
     private final Map<String, ObjectClassDef> classesByName;
-    private final Map<String, List<ObjectClassDef>> classesByLocalName;
     private final Map<String, InteractionClassDef> interactionsByName;
-    private final Map<String, List<InteractionClassDef>> interactionsByLocalName;
+    private final Map<String, List<InteractionClassDef>> interactionsByShortName;
     private final Map<Integer, ObjectClassDef> classesById;
     private final Map<Integer, FomAttribute> attributesById;
 
@@ -37,11 +36,12 @@ public final class FomCatalog {
             builder.addInteractionClass(definition);
         }
         this.classesByName = Collections.unmodifiableMap(new LinkedHashMap<>(builder.classesByName));
-        this.classesByLocalName = indexByLocalName(classesByName.values(), ObjectClassDef::localName);
         this.interactionsByName =
                 Collections.unmodifiableMap(new LinkedHashMap<>(builder.interactionsByName));
-        this.interactionsByLocalName =
-                indexByLocalName(interactionsByName.values(), InteractionClassDef::localName);
+        this.interactionsByShortName =
+                indexByShortName(
+                        interactionsByName.values(),
+                        definition -> shortName(definition.hlaName()));
 
         Map<Integer, ObjectClassDef> byId = new LinkedHashMap<>();
         Map<Integer, FomAttribute> attrsById = new LinkedHashMap<>();
@@ -63,19 +63,14 @@ public final class FomCatalog {
      * Resolves a canonical object class name exactly.
      */
     public Optional<ObjectClassDef> canonicalObjectClass(String name) {
-        return Optional.ofNullable(classesByName.get(normalizeName(name)));
+        return Optional.ofNullable(classesByName.get(name));
     }
 
     /**
-     * Temporary compatibility lookup used while runtime callers migrate to canonical names.
-     * Canonical names resolve exactly; local names resolve only when globally unique.
+     * Resolves an object class by its exact canonical name.
      */
     public Optional<ObjectClassDef> objectClass(String name) {
-        Optional<ObjectClassDef> canonical = canonicalObjectClass(name);
-        if (canonical.isPresent()) {
-            return canonical;
-        }
-        return uniqueLocalMatch(classesByLocalName.get(localName(name)));
+        return canonicalObjectClass(name);
     }
 
     public Optional<ObjectClassDef> objectClass(int id) {
@@ -102,7 +97,7 @@ public final class FomCatalog {
         if (canonical.isPresent()) {
             return canonical;
         }
-        return uniqueLocalMatch(interactionsByLocalName.get(localName(name)));
+        return uniqueLocalMatch(interactionsByShortName.get(shortName(name)));
     }
 
     public List<ObjectClassDef> objectClassAndDescendants(String name) {
@@ -187,7 +182,7 @@ public final class FomCatalog {
         return pathKey.replaceAll("\\[[0-9]+\\]", "[]");
     }
 
-    static String localName(String hlaName) {
+    static String shortName(String hlaName) {
         if (hlaName == null) {
             return null;
         }
@@ -206,12 +201,12 @@ public final class FomCatalog {
                 : Optional.empty();
     }
 
-    private static <T> Map<String, List<T>> indexByLocalName(
+    private static <T> Map<String, List<T>> indexByShortName(
             Collection<T> values,
-            Function<T, String> localName) {
+            Function<T, String> shortName) {
         Map<String, List<T>> mutable = new LinkedHashMap<>();
         for (T value : values) {
-            mutable.computeIfAbsent(localName.apply(value), ignored -> new ArrayList<>()).add(value);
+            mutable.computeIfAbsent(shortName.apply(value), ignored -> new ArrayList<>()).add(value);
         }
         Map<String, List<T>> immutable = new LinkedHashMap<>();
         mutable.forEach((name, matches) -> immutable.put(name, List.copyOf(matches)));
@@ -232,7 +227,6 @@ public final class FomCatalog {
     public record ObjectClassDef(
             int id,
             String hlaName,
-            String localName,
             String parentName,
             List<FomAttribute> attributes) {
 
@@ -280,7 +274,6 @@ public final class FomCatalog {
 
     public record InteractionClassDef(
             String hlaName,
-            String localName,
             String parentName,
             List<FomParameter> parameters) {
 
@@ -323,8 +316,6 @@ public final class FomCatalog {
         }
 
         private void addObjectClass(FOMXML.ObjectClassDefinition definition) {
-            String localClassName = localName(definition.name());
-
             List<AttributeSource> allAttributes = new ArrayList<>();
             if (definition.parentName() != null) {
                 allAttributes.addAll(attributesByClassName.getOrDefault(definition.parentName(), List.of()));
@@ -344,7 +335,6 @@ public final class FomCatalog {
                     new ObjectClassDef(
                             classId,
                             definition.name(),
-                            localClassName,
                             definition.parentName(),
                             flattened);
             classesByName.put(classDef.hlaName(), classDef);
@@ -366,7 +356,6 @@ public final class FomCatalog {
             }
             InteractionClassDef classDef = new InteractionClassDef(
                     definition.name(),
-                    localName(definition.name()),
                     definition.parentName(),
                     flattened);
             interactionsByName.put(classDef.hlaName(), classDef);

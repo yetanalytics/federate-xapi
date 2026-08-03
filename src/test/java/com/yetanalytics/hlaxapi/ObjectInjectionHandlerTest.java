@@ -34,9 +34,9 @@ class ObjectInjectionHandlerTest {
     void objectContextCarriesClassHandleAndIncomingAttributes() {
         byte[] count = HLAEncodingTestSupport.int32(4, ByteOrder.BIG_ENDIAN);
         ObjectInjectionContext context =
-                new ObjectInjectionContext("TrackedEntity", "object-17", Map.of("Count", count));
+                new ObjectInjectionContext("BaseEntity.TrackedEntity", "object-17", Map.of("Count", count));
 
-        assertEquals("TrackedEntity", context.getHlaClass());
+        assertEquals("BaseEntity.TrackedEntity", context.getHlaClass());
         assertEquals("object-17", context.getObjectHandle());
         assertSame(count, context.getAttributeMap().get("Count"));
     }
@@ -47,7 +47,7 @@ class ObjectInjectionHandlerTest {
         byte[] position = position(12, 18);
         byte[] history = HLAEncodingTestSupport.variableArray(position(1, 2), position(3, 4));
         ObjectInjectionContext context = new ObjectInjectionContext(
-                "TrackedEntity",
+                "BaseEntity.TrackedEntity",
                 "object-17",
                 Map.of(
                         "EntityId", HLAEncodingTestSupport.asciiString("entity-17"),
@@ -72,11 +72,11 @@ class ObjectInjectionHandlerTest {
 
         ValueResolution absent = handler.handleTrigger(
                 target("Count"),
-                new ObjectInjectionContext("TrackedEntity", "object-17", Map.of()));
+                new ObjectInjectionContext("BaseEntity.TrackedEntity", "object-17", Map.of()));
         ValueResolution malformed = handler.handleTrigger(
                 target("Count"),
                 new ObjectInjectionContext(
-                        "TrackedEntity",
+                        "BaseEntity.TrackedEntity",
                         "object-17",
                         Map.of("Count", new byte[] {1})));
 
@@ -127,7 +127,7 @@ class ObjectInjectionHandlerTest {
                     {"object":{"id":["trigger",["Count"]]}}
                     """);
             wrongType.type = type;
-            TestInjectionContext context = new TestInjectionContext(type, "TrackedEntity");
+            TestInjectionContext context = new TestInjectionContext(type, "BaseEntity.TrackedEntity");
 
             TriggerProcessor.TriggerProcessingResult validResult =
                     processor.renderTemplateForValidation(valid, context);
@@ -145,7 +145,7 @@ class ObjectInjectionHandlerTest {
     void rejectsMissingObjectTargetsInStatementsAndCriteriaEvenWhenOptional() {
         TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
         TestInjectionContext context =
-                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "TrackedEntity");
+                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "BaseEntity.TrackedEntity");
         StatementTrigger missingTrigger = trigger("""
                 {"missing":["trigger",["NotAnAttribute"],{"required":false}]}
                 """);
@@ -172,7 +172,7 @@ class ObjectInjectionHandlerTest {
     void validatesQueryAndLookupPathsAgainstTheirReferencedObjectClasses() {
         TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
         TestInjectionContext context =
-                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "TrackedEntity");
+                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "BaseEntity.TrackedEntity");
         StatementTrigger valid = trigger("""
                 {
                   "result":{"score":{"raw":["query","BaseEntity",["Position","X"],null]}},
@@ -253,7 +253,7 @@ class ObjectInjectionHandlerTest {
             TriggerProcessor.TriggerProcessingResult result =
                     processor.renderTemplateForValidation(
                             trigger,
-                            new TestInjectionContext(type, "TrackedEntity"));
+                            new TestInjectionContext(type, "BaseEntity.TrackedEntity"));
 
             assertEquals(type == StatementTrigger.Type.OBJECT_UPDATE, result.success(), type.toString());
         }
@@ -280,7 +280,7 @@ class ObjectInjectionHandlerTest {
             Expression criteria) {
         StatementTrigger trigger = new StatementTrigger();
         trigger.type = StatementTrigger.Type.OBJECT_UPDATE;
-        trigger.clazz = "TrackedEntity";
+        trigger.clazz = "BaseEntity.TrackedEntity";
         trigger.criteria = criteria;
         trigger.statement = statement;
         return trigger;
@@ -307,7 +307,7 @@ class ObjectInjectionHandlerTest {
 
         TriggerProcessor.TriggerProcessingResult result = processor.processTrigger(
                 trigger,
-                new ObjectInjectionContext("TrackedEntity", "object-17", attributes));
+                new ObjectInjectionContext("BaseEntity.TrackedEntity", "object-17", attributes));
 
         assertTrue(result.success(), type + " " + target);
         assertEquals("{\"value\":null}", result.statement(), type + " " + target);
