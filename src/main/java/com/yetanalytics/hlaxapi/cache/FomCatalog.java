@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
 import javax.xml.xpath.XPathExpressionException;
 
 import org.springframework.stereotype.Component;
@@ -23,7 +22,6 @@ public final class FomCatalog {
 
     private final Map<String, ObjectClassDef> classesByName;
     private final Map<String, InteractionClassDef> interactionsByName;
-    private final Map<String, List<InteractionClassDef>> interactionsByShortName;
     private final Map<Integer, ObjectClassDef> classesById;
     private final Map<Integer, FomAttribute> attributesById;
 
@@ -38,10 +36,6 @@ public final class FomCatalog {
         this.classesByName = Collections.unmodifiableMap(new LinkedHashMap<>(builder.classesByName));
         this.interactionsByName =
                 Collections.unmodifiableMap(new LinkedHashMap<>(builder.interactionsByName));
-        this.interactionsByShortName =
-                indexByShortName(
-                        interactionsByName.values(),
-                        definition -> shortName(definition.hlaName()));
 
         Map<Integer, ObjectClassDef> byId = new LinkedHashMap<>();
         Map<Integer, FomAttribute> attrsById = new LinkedHashMap<>();
@@ -85,19 +79,14 @@ public final class FomCatalog {
      * Resolves a canonical interaction class name exactly.
      */
     public Optional<InteractionClassDef> canonicalInteractionClass(String name) {
-        return Optional.ofNullable(interactionsByName.get(normalizeName(name)));
+        return Optional.ofNullable(interactionsByName.get(name));
     }
 
     /**
-     * Temporary compatibility lookup used while runtime callers migrate to canonical names.
-     * Canonical names resolve exactly; local names resolve only when globally unique.
+     * Resolves an interaction class by its exact canonical name.
      */
     public Optional<InteractionClassDef> interactionClass(String name) {
-        Optional<InteractionClassDef> canonical = canonicalInteractionClass(name);
-        if (canonical.isPresent()) {
-            return canonical;
-        }
-        return uniqueLocalMatch(interactionsByShortName.get(shortName(name)));
+        return canonicalInteractionClass(name);
     }
 
     public List<ObjectClassDef> objectClassAndDescendants(String name) {
@@ -180,37 +169,6 @@ public final class FomCatalog {
             return null;
         }
         return pathKey.replaceAll("\\[[0-9]+\\]", "[]");
-    }
-
-    static String shortName(String hlaName) {
-        if (hlaName == null) {
-            return null;
-        }
-        String trimmed = normalizeName(hlaName);
-        int index = trimmed.lastIndexOf('.');
-        return index >= 0 ? trimmed.substring(index + 1) : trimmed;
-    }
-
-    private static String normalizeName(String name) {
-        return name == null ? null : name.trim();
-    }
-
-    private static <T> Optional<T> uniqueLocalMatch(List<T> matches) {
-        return matches != null && matches.size() == 1
-                ? Optional.of(matches.get(0))
-                : Optional.empty();
-    }
-
-    private static <T> Map<String, List<T>> indexByShortName(
-            Collection<T> values,
-            Function<T, String> shortName) {
-        Map<String, List<T>> mutable = new LinkedHashMap<>();
-        for (T value : values) {
-            mutable.computeIfAbsent(shortName.apply(value), ignored -> new ArrayList<>()).add(value);
-        }
-        Map<String, List<T>> immutable = new LinkedHashMap<>();
-        mutable.forEach((name, matches) -> immutable.put(name, List.copyOf(matches)));
-        return Collections.unmodifiableMap(immutable);
     }
 
     private boolean isSameOrDescendant(ObjectClassDef candidate, ObjectClassDef requestedClass) {

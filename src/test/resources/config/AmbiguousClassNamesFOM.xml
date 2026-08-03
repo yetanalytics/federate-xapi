@@ -49,6 +49,9 @@
                         <dataType>HLAinteger32BE</dataType>
                     </parameter>
                 </interactionClass>
+                <interactionClass>
+                    <name>Created</name>
+                </interactionClass>
             </interactionClass>
             <interactionClass>
                 <name>OtherEvents</name>

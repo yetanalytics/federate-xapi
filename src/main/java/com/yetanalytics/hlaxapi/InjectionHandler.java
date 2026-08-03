@@ -11,7 +11,6 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.yetanalytics.hlaxapi.FOMXML.PathCheckResult;
 import com.yetanalytics.hlaxapi.cache.CachedObject;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
@@ -188,17 +187,28 @@ public class InjectionHandler {
     }
 
     private EventTargetDefinition interactionTargetDefinition(String hlaClass, Target target) {
-        PathCheckResult path = fomXml.checkInteractionParameterPath(hlaClass, target.parts);
-        String topLevelType = null;
-        String topLevelName = FomCatalog.topLevelTargetPart(target.parts);
-        if (topLevelName != null) {
-            try {
-                topLevelType = fomXml.getParameterType(hlaClass, topLevelName, true);
-            } catch (XPathExpressionException e) {
-                logger.warn("Unable to resolve interaction parameter type for {}.{}", hlaClass, topLevelName, e);
-            }
+        if (fomCatalog == null) {
+            throw new IllegalStateException("FOM interaction catalog is not configured");
         }
-        return new EventTargetDefinition(path.exists, path.primitiveType, topLevelType);
+        Optional<FomCatalog.InteractionClassDef> interactionClass =
+                fomCatalog.interactionClass(hlaClass);
+        if (interactionClass.isEmpty()) {
+            return EventTargetDefinition.missing();
+        }
+        List<Object> targetParts = target == null ? null : target.parts;
+        String pathKey = FomCatalog.targetPath(targetParts);
+        String topLevelName = FomCatalog.topLevelTargetPart(targetParts);
+        Optional<FomCatalog.FomParameter> targetParameter =
+                interactionClass.orElseThrow().parameter(pathKey);
+        Optional<FomCatalog.FomParameter> topLevelParameter =
+                interactionClass.orElseThrow().parameter(topLevelName);
+        if (targetParameter.isEmpty() || topLevelParameter.isEmpty()) {
+            return EventTargetDefinition.missing();
+        }
+        return new EventTargetDefinition(
+                true,
+                targetParameter.orElseThrow().primitiveType(),
+                topLevelParameter.orElseThrow().dataType());
     }
 
     private EventTargetDefinition objectTargetDefinition(String hlaClass, Target target) {

@@ -48,14 +48,14 @@ class FomCatalogTest {
         FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
 
         assertEquals(
-                List.of("SimEntity", "Carrot", "Rabbit", "Wolf"),
+                List.of("SimEntity", "SimEntity.Carrot", "SimEntity.Rabbit", "SimEntity.Wolf"),
                 catalog.objectClassAndDescendants("SimEntity").stream()
-                        .map(definition -> FomCatalog.shortName(definition.hlaName()))
+                        .map(FomCatalog.ObjectClassDef::hlaName)
                         .toList());
         assertEquals(
-                List.of("Rabbit"),
+                List.of("SimEntity.Rabbit"),
                 catalog.objectClassAndDescendants("SimEntity.Rabbit").stream()
-                        .map(definition -> FomCatalog.shortName(definition.hlaName()))
+                        .map(FomCatalog.ObjectClassDef::hlaName)
                         .toList());
         assertEquals(List.of(), catalog.objectClassAndDescendants("MissingObject"));
     }
@@ -129,10 +129,13 @@ class FomCatalogTest {
         assertTrue(otherUpdated.parameter("Speed").isPresent());
         assertFalse(otherUpdated.parameter("EntityId").isPresent());
         assertTrue(catalog.interactionClass("Updated").isEmpty());
+        assertTrue(catalog.interactionClass("Created").isEmpty());
+        assertTrue(catalog.interactionClass("EntityEvents.Created").isPresent());
+        assertTrue(catalog.interactionClass(" HLAinteractionRoot.EntityEvents.Created ").isEmpty());
     }
 
     @Test
-    void flattensInteractionParametersAndRetainsTemporaryUniqueLocalLookup() {
+    void flattensInteractionParameters() {
         FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
 
         FomCatalog.InteractionClassDef entityMoved =

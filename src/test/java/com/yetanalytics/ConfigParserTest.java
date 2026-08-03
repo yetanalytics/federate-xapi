@@ -33,6 +33,7 @@ import com.yetanalytics.hlaxapi.InjectionHandler;
 import com.yetanalytics.hlaxapi.SimulationConfig;
 import com.yetanalytics.hlaxapi.TriggerProcessor;
 import com.yetanalytics.hlaxapi.cache.CachedObject;
+import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ValueResolution;
 import com.yetanalytics.hlaxapi.config.ConfigParser;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
@@ -65,9 +66,7 @@ public class ConfigParserTest {
         SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
             "config/HlaFedereplFOM.xml");
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        InjectionHandler ih = new InjectionHandler();
-        ih.setFomXml(new FOMXML(simConfig, decoderRegistry));
-        ih.setHLADecoderRegistry(decoderRegistry);
+        InjectionHandler ih = interactionHandler(simConfig, decoderRegistry);
 
 
         TriggerProcessor triggerProcessor = new TriggerProcessor(ih);
@@ -300,9 +299,7 @@ public class ConfigParserTest {
         SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
                 "config/HlaFedereplFOM.xml");
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        InjectionHandler ih = new InjectionHandler();
-        ih.setFomXml(new FOMXML(simConfig, decoderRegistry));
-        ih.setHLADecoderRegistry(decoderRegistry);
+        InjectionHandler ih = interactionHandler(simConfig, decoderRegistry);
 
         byte[] gridPosition = java.nio.ByteBuffer.allocate(Integer.BYTES * 2)
                 .order(java.nio.ByteOrder.BIG_ENDIAN)
@@ -326,9 +323,7 @@ public class ConfigParserTest {
         SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
                 "config/HlaFedereplFOM.xml");
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        InjectionHandler ih = new InjectionHandler();
-        ih.setFomXml(new FOMXML(simConfig, decoderRegistry));
-        ih.setHLADecoderRegistry(decoderRegistry);
+        InjectionHandler ih = interactionHandler(simConfig, decoderRegistry);
 
         byte[] gridPosition = java.nio.ByteBuffer.allocate(Integer.BYTES * 2)
                 .order(java.nio.ByteOrder.BIG_ENDIAN)
@@ -354,9 +349,7 @@ public class ConfigParserTest {
         SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
                 "config/HlaFedereplFOM.xml");
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        InjectionHandler ih = new InjectionHandler();
-        ih.setFomXml(new FOMXML(simConfig, decoderRegistry));
-        ih.setHLADecoderRegistry(decoderRegistry);
+        InjectionHandler ih = interactionHandler(simConfig, decoderRegistry);
 
         byte[] gridPosition = java.nio.ByteBuffer.allocate(Integer.BYTES * 2)
                 .order(java.nio.ByteOrder.BIG_ENDIAN)
@@ -384,9 +377,7 @@ public class ConfigParserTest {
         SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
                 "config/HlaFedereplFOM.xml");
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        InjectionHandler ih = new InjectionHandler();
-        ih.setFomXml(new FOMXML(simConfig, decoderRegistry));
-        ih.setHLADecoderRegistry(decoderRegistry);
+        InjectionHandler ih = interactionHandler(simConfig, decoderRegistry);
 
         TriggerProcessor triggerProcessor = new TriggerProcessor(ih);
 
@@ -412,9 +403,7 @@ public class ConfigParserTest {
         SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
             "config/HlaFedereplFOM.xml");
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        InjectionHandler ih = new InjectionHandler();
-        ih.setFomXml(new FOMXML(simConfig, decoderRegistry));
-        ih.setHLADecoderRegistry(decoderRegistry);
+        InjectionHandler ih = interactionHandler(simConfig, decoderRegistry);
 
         TriggerProcessor triggerProcessor = new TriggerProcessor(ih);
 
@@ -451,6 +440,17 @@ public class ConfigParserTest {
         String out = triggerProcessor.processTrigger(st, injectionContext).statement();
         assertNotNull(out);
         assertTrue(out.contains("\"name\":\"[alpha, beta]\""));
+    }
+
+    private static InjectionHandler interactionHandler(
+            SimulationConfig simulationConfig,
+            HLADecoderRegistry decoderRegistry) {
+        FOMXML fomXml = new FOMXML(simulationConfig, decoderRegistry);
+        InjectionHandler handler = new InjectionHandler();
+        handler.setFomXml(fomXml);
+        handler.setHLADecoderRegistry(decoderRegistry);
+        handler.setFomCatalog(new FomCatalog(fomXml));
+        return handler;
     }
 
     @Test

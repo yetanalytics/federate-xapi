@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -86,6 +85,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     private static final Logger logger = LogManager.getLogger(HlaInterfaceImpl.class);
     private static final String OBJECT_ROOT_PREFIX = "HLAobjectRoot.";
+    private static final String INTERACTION_ROOT_PREFIX = "HLAinteractionRoot.";
 
     private RTIambassador ambassador;
 
@@ -518,7 +518,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         try {
             String interactionName = ambassador.getInteractionClassName(interactionClass);
             logger.trace("Interaction Handle: {}", interactionName);
-            String interactionKey = StringUtils.substringAfterLast(interactionName, ".");
+            String interactionKey = rootRelativeInteractionClassName(interactionName);
 
             // Create Interaction-specific injection context to pass to trigger processor
             InteractionInjectionContext context = new InteractionInjectionContext(interactionKey,
@@ -532,6 +532,12 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         } catch (InvalidInteractionClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError e) {
             logger.error("Error ascertaining interaction details!", e);
         }
+    }
+
+    private String rootRelativeInteractionClassName(String className) {
+        return className != null && className.startsWith(INTERACTION_ROOT_PREFIX)
+                ? className.substring(INTERACTION_ROOT_PREFIX.length())
+                : className;
     }
 
     private Map<String, byte[]> getMapWithParameterNames(InteractionClassHandle interactionClass,
