@@ -19,7 +19,6 @@ import com.yetanalytics.hlaxapi.InjectionHandler;
 import com.yetanalytics.hlaxapi.SimulationConfig;
 import com.yetanalytics.hlaxapi.TriggerProcessor;
 import com.yetanalytics.hlaxapi.TriggerProcessor.TriggerProcessingResult;
-import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger.Type;
 import com.yetanalytics.hlaxapi.config.model.Target;
@@ -224,11 +223,9 @@ class XapiValueGeneratorTest {
         SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
                 "config/HlaFedereplFOM.xml");
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        FOMXML fomXml = new FOMXML(simConfig, decoderRegistry);
         InjectionHandler ih = new InjectionHandler();
-        ih.setFomXml(fomXml);
+        ih.setFomXml(new FOMXML(simConfig, decoderRegistry));
         ih.setHLADecoderRegistry(decoderRegistry);
-        ih.setFomCatalog(new FomCatalog(fomXml));
         StatementValidator validator = new StatementValidator();
 
         TriggerProcessor tp = new TriggerProcessor(ih);

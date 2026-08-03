@@ -11,6 +11,7 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import com.yetanalytics.hlaxapi.FOMXML.PathCheckResult;
 import com.yetanalytics.hlaxapi.cache.CachedObject;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
@@ -187,28 +188,17 @@ public class InjectionHandler {
     }
 
     private EventTargetDefinition interactionTargetDefinition(String hlaClass, Target target) {
-        if (fomCatalog == null) {
-            throw new IllegalStateException("FOM interaction catalog is not configured");
-        }
-        Optional<FomCatalog.InteractionClassDef> interactionClass =
-                fomCatalog.interactionClass(hlaClass);
-        if (interactionClass.isEmpty()) {
+        if (target == null) {
             return EventTargetDefinition.missing();
         }
-        List<Object> targetParts = target == null ? null : target.parts;
-        String pathKey = FomCatalog.targetPath(targetParts);
-        String topLevelName = FomCatalog.topLevelTargetPart(targetParts);
-        Optional<FomCatalog.FomParameter> targetParameter =
-                interactionClass.orElseThrow().parameter(pathKey);
-        Optional<FomCatalog.FomParameter> topLevelParameter =
-                interactionClass.orElseThrow().parameter(topLevelName);
-        if (targetParameter.isEmpty() || topLevelParameter.isEmpty()) {
-            return EventTargetDefinition.missing();
-        }
+        PathCheckResult path = fomXml.checkInteractionParameterPath(hlaClass, target.parts);
+        String topLevelType = fomXml.getInteractionParameterType(
+                hlaClass,
+                FomCatalog.topLevelTargetPart(target.parts));
         return new EventTargetDefinition(
-                true,
-                targetParameter.orElseThrow().primitiveType(),
-                topLevelParameter.orElseThrow().dataType());
+                path.exists,
+                path.primitiveType,
+                topLevelType);
     }
 
     private EventTargetDefinition objectTargetDefinition(String hlaClass, Target target) {

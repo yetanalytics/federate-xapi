@@ -97,13 +97,13 @@ class FomCatalogTest {
     }
 
     @Test
-    void indexesObjectAndInteractionClassesByCanonicalNameWithoutLocalCollisions() {
+    void indexesObjectClassesByCanonicalNameWithoutLocalCollisions() {
         FomCatalog catalog = catalog("src/test/resources/config/AmbiguousClassNamesFOM.xml");
 
         FomCatalog.ObjectClassDef entityRabbit =
-                catalog.canonicalObjectClass("SimEntity.Rabbit").orElseThrow();
+                catalog.objectClass("SimEntity.Rabbit").orElseThrow();
         FomCatalog.ObjectClassDef otherRabbit =
-                catalog.canonicalObjectClass("SomeOtherSuperclass.Rabbit").orElseThrow();
+                catalog.objectClass("SomeOtherSuperclass.Rabbit").orElseThrow();
 
         assertEquals("SimEntity", entityRabbit.parentName());
         assertTrue(entityRabbit.attribute("EntityId").isPresent());
@@ -114,40 +114,6 @@ class FomCatalogTest {
         assertTrue(otherRabbit.attribute("Speed").isPresent());
         assertFalse(otherRabbit.attribute("EntityId").isPresent());
         assertTrue(catalog.objectClass("Rabbit").isEmpty());
-
-        FomCatalog.InteractionClassDef entityUpdated =
-                catalog.canonicalInteractionClass("EntityEvents.Updated").orElseThrow();
-        FomCatalog.InteractionClassDef otherUpdated =
-                catalog.canonicalInteractionClass("OtherEvents.Updated").orElseThrow();
-
-        assertEquals("EntityEvents", entityUpdated.parentName());
-        assertTrue(entityUpdated.parameter("EntityId").isPresent());
-        assertTrue(entityUpdated.parameter("Hunger").isPresent());
-        assertFalse(entityUpdated.parameter("OtherId").isPresent());
-        assertEquals("OtherEvents", otherUpdated.parentName());
-        assertTrue(otherUpdated.parameter("OtherId").isPresent());
-        assertTrue(otherUpdated.parameter("Speed").isPresent());
-        assertFalse(otherUpdated.parameter("EntityId").isPresent());
-        assertTrue(catalog.interactionClass("Updated").isEmpty());
-        assertTrue(catalog.interactionClass("Created").isEmpty());
-        assertTrue(catalog.interactionClass("EntityEvents.Created").isPresent());
-        assertTrue(catalog.interactionClass(" HLAinteractionRoot.EntityEvents.Created ").isEmpty());
-    }
-
-    @Test
-    void flattensInteractionParameters() {
-        FomCatalog catalog = catalog("config/HlaFedereplFOM.xml");
-
-        FomCatalog.InteractionClassDef entityMoved =
-                catalog.interactionClass("EntityMoved").orElseThrow();
-
-        assertEquals("EntityMoved", entityMoved.hlaName());
-        assertEquals(
-                "HLAinteger32BE",
-                entityMoved.parameter("FromPosition.X").orElseThrow().primitiveType());
-        assertEquals(
-                "GridPosition",
-                entityMoved.parameter("FromPosition").orElseThrow().dataType());
     }
 
     @Test
@@ -170,14 +136,6 @@ class FomCatalogTest {
         assertEquals(List.of("Hunger"), rabbit.attributes().stream()
                 .map(FOMXML.ObjectAttributeDefinition::name)
                 .toList());
-
-        FOMXML.InteractionClassDefinition entityMoved = fomXml.interactionClassDefinitions().stream()
-                .filter(definition -> definition.name().equals("EntityMoved"))
-                .findFirst()
-                .orElseThrow();
-        assertEquals("HLAinteractionRoot", entityMoved.parentName());
-        assertTrue(entityMoved.parameters().stream()
-                .anyMatch(parameter -> parameter.name().equals("FromPosition")));
     }
 
     @Test
