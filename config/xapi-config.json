@@ -81,7 +81,7 @@
         },
         {
             "type": "ObjectCreate",
-            "class": "Rabbit",
+            "class": "SimEntity.Rabbit",
             "statement": {
                 "actor": {
                     "objectType": "Agent",
@@ -141,7 +141,7 @@
         },
         {
             "type": "ObjectDelete",
-            "class": "Rabbit",
+            "class": "SimEntity.Rabbit",
             "statement": {
                 "actor": {
                     "objectType": "Agent",
