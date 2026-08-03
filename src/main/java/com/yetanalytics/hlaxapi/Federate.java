@@ -48,6 +48,7 @@ public class Federate {
             return;
         }
 
+        printBanner();
         try {
             shutdownLatch.await();
         } catch (InterruptedException e) {
@@ -76,5 +77,20 @@ public class Federate {
             shutdownLatch.countDown();
 
         }
+    }
+
+    private static final String BANNER = """
+            \n
+             ______       _                _                         _____ _____
+            |  ____|     | |              | |                  /\\   |  __ \\_   _|
+            | |__ ___  __| | ___ _ __ __ _| |_ ___   __  __   /  \\  | |__) || |
+            |  __/ _ \\/ _` |/ _ \\ '__/ _` | __/ _ \\  \\ \\/ /  / /\\ \\ |  ___/ | |
+            | | |  __/ (_| |  __/ | | (_| | ||  __/   >  <  / ____ \\| |    _| |_
+            |_|  \\___|\\__,_|\\___|_|  \\__,_|\\__\\___|  /_/\\_\\/_/    \\_\\_|   |_____|
+            (c) 2026 Yet Analytics, Inc
+            """;
+
+    public static void printBanner() {
+        logger.info(BANNER);
     }
 }
