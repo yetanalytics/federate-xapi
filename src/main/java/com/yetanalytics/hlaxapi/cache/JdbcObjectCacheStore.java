@@ -30,11 +30,6 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
     }
 
     @Override
-    public boolean isOpen() {
-        return connection != null;
-    }
-
-    @Override
     public CachedObject ensureObject(
             String objectHandle,
             String objectName,

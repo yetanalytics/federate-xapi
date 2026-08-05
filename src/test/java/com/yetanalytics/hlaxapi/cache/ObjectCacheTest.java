@@ -2,6 +2,7 @@ package com.yetanalytics.hlaxapi.cache;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.yetanalytics.hlaxapi.FOMXML;
@@ -37,8 +38,8 @@ class ObjectCacheTest {
     private final FomCatalog catalog = new FomCatalog(fomXml);
 
     @Test
-    void disabledWhenNoQueryInjectionsAndDoesNotOpenSqlite(@TempDir Path tempDir) {
-        Path databasePath = tempDir.resolve("disabled.sqlite");
+    void alwaysOnWithoutSubscriptionsOpensSqliteAndStoresDirectCalls(@TempDir Path tempDir) {
+        Path databasePath = tempDir.resolve("always-on.sqlite");
 
         try (ObjectCache cache = new ObjectCache(
                 new XapiConfig(),
@@ -46,27 +47,39 @@ class ObjectCacheTest {
                 fomXml,
                 decoderRegistry,
                 "jdbc:sqlite:" + databasePath)) {
+            assertTrue(cache.subscriptions().isEmpty());
+            assertTrue(cache.currentObjects("SimEntity.Rabbit").isEmpty());
+            assertTrue(Files.exists(databasePath));
+
             cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
             cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(
                     75)));
+
+            assertEquals(
+                    75,
+                    cache.findFirstValue("SimEntity.Rabbit", new Target(List.of("Hunger")), null).orElseThrow());
+
             cache.removeObject("object-1");
-
-            assertFalse(cache.isEnabled());
-            assertTrue(cache.subscriptions().isEmpty());
-            assertFalse(cache.findFirstValue("SimEntity.Rabbit", new Target(List.of("Hunger")), null).isPresent());
-            assertFalse(Files.exists(databasePath));
+            assertTrue(cache.currentObjects("SimEntity.Rabbit").isEmpty());
         }
     }
 
     @Test
-    void disabledCacheDoesNotRequireConnectionSettings() {
-        try (ObjectCache cache = new ObjectCache(new XapiConfig(), catalog, fomXml, decoderRegistry)) {
-            assertFalse(cache.isEnabled());
-        }
+    void emptyConfigFailsConstructionWhenCacheCannotOpen(@TempDir Path tempDir) {
+        String jdbcUrl = "jdbc:sqlite:" + tempDir.resolve("missing").resolve("cache.sqlite");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new ObjectCache(
+                        new XapiConfig(),
+                        catalog,
+                        fomXml,
+                        decoderRegistry,
+                        jdbcUrl));
     }
 
     @Test
-    void objectUpdateSubscriptionsDoNotEnableCacheAndIncludeInheritedAttributes(@TempDir Path tempDir) {
+    void objectUpdateSubscriptionsInitializeCacheAndIncludeInheritedAttributes(@TempDir Path tempDir) {
         Path databasePath = tempDir.resolve("object-update-only.sqlite");
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(objectUpdateTrigger("SimEntity.Rabbit"));
@@ -80,17 +93,16 @@ class ObjectCacheTest {
             Set<String> rabbitAttributes =
                     Set.copyOf(catalog.objectClass("SimEntity.Rabbit").orElseThrow().topLevelAttributeNames());
 
-            assertFalse(cache.isEnabled());
             assertTrue(cache.cacheSubscriptions().isEmpty());
             assertEquals(rabbitAttributes, cache.eventSubscriptions().get("SimEntity.Rabbit"));
             assertEquals(rabbitAttributes, cache.subscriptions().get("SimEntity.Rabbit"));
             assertTrue(cache.hasSubscriptions());
-            assertFalse(Files.exists(databasePath));
+            assertTrue(Files.exists(databasePath));
         }
     }
 
     @Test
-    void objectUpdatePreviousReferencesEnableOnlyTheirCacheAttributes(@TempDir Path tempDir) {
+    void objectUpdatePreviousReferencesSelectOnlyTheirCacheAttributes(@TempDir Path tempDir) {
         StatementTrigger trigger = objectUpdateTrigger("SimEntity.Rabbit");
         trigger.statement = """
                 {
@@ -110,7 +122,6 @@ class ObjectCacheTest {
             Set<String> rabbitAttributes =
                     Set.copyOf(catalog.objectClass("SimEntity.Rabbit").orElseThrow().topLevelAttributeNames());
 
-            assertTrue(cache.isEnabled());
             assertEquals(Set.of("Hunger", "Position"), cache.cacheSubscriptions().get("SimEntity.Rabbit"));
             assertEquals(rabbitAttributes, cache.eventSubscriptions().get("SimEntity.Rabbit"));
             assertEquals(rabbitAttributes, cache.subscriptions().get("SimEntity.Rabbit"));
@@ -118,7 +129,7 @@ class ObjectCacheTest {
     }
 
     @Test
-    void objectCreateSubscriptionsDoNotEnableCacheAndIncludeInheritedAttributes(@TempDir Path tempDir) {
+    void objectCreateSubscriptionsInitializeCacheAndIncludeInheritedAttributes(@TempDir Path tempDir) {
         Path databasePath = tempDir.resolve("object-create-only.sqlite");
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(objectTrigger(StatementTrigger.Type.OBJECT_CREATE, "SimEntity.Rabbit"));
@@ -132,15 +143,14 @@ class ObjectCacheTest {
             Set<String> rabbitAttributes =
                     Set.copyOf(catalog.objectClass("SimEntity.Rabbit").orElseThrow().topLevelAttributeNames());
 
-            assertFalse(cache.isEnabled());
             assertTrue(cache.cacheSubscriptions().isEmpty());
             assertEquals(rabbitAttributes, cache.eventSubscriptions().get("SimEntity.Rabbit"));
-            assertFalse(Files.exists(databasePath));
+            assertTrue(Files.exists(databasePath));
         }
     }
 
     @Test
-    void objectDeleteSubscriptionsEnableCacheForAllInheritedAttributes(@TempDir Path tempDir) {
+    void objectDeleteSubscriptionsCacheAllInheritedAttributes(@TempDir Path tempDir) {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(objectTrigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Rabbit"));
 
@@ -153,7 +163,6 @@ class ObjectCacheTest {
             Set<String> rabbitAttributes =
                     Set.copyOf(catalog.objectClass("SimEntity.Rabbit").orElseThrow().topLevelAttributeNames());
 
-            assertTrue(cache.isEnabled());
             assertEquals(rabbitAttributes, cache.cacheSubscriptions().get("SimEntity.Rabbit"));
             assertEquals(rabbitAttributes, cache.eventSubscriptions().get("SimEntity.Rabbit"));
             assertEquals(rabbitAttributes, cache.subscriptions().get("SimEntity.Rabbit"));
@@ -177,7 +186,6 @@ class ObjectCacheTest {
             Set<String> rabbitAttributes =
                     Set.copyOf(catalog.objectClass("SimEntity.Rabbit").orElseThrow().topLevelAttributeNames());
 
-            assertTrue(cache.isEnabled());
             assertEquals(Set.of("EntityId", "Hunger"), cache.cacheSubscriptions().get("SimEntity.Rabbit"));
             assertEquals(rabbitAttributes, cache.eventSubscriptions().get("SimEntity.Rabbit"));
             assertEquals(rabbitAttributes, cache.subscriptions().get("SimEntity.Rabbit"));
@@ -185,20 +193,24 @@ class ObjectCacheTest {
     }
 
     @Test
-    void retainsUnknownObjectUpdateClassForSubscriptionErrorHandling() {
+    void retainsUnknownObjectUpdateClassForSubscriptionErrorHandling(@TempDir Path tempDir) {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(objectUpdateTrigger("MissingObject"));
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
-            assertFalse(cache.isEnabled());
+        try (ObjectCache cache = new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("unknown-class.sqlite"))) {
             assertEquals(Set.of("*"), cache.eventSubscriptions().get("MissingObject"));
             assertEquals(Set.of("*"), cache.subscriptions().get("MissingObject"));
         }
     }
 
     @Test
-    void enabledWhenQueryInjectionsExistAndCanQueryReflectedValues(@TempDir Path tempDir) {
-        Path databasePath = tempDir.resolve("enabled.sqlite");
+    void queryInjectionsCanQueryReflectedValues(@TempDir Path tempDir) {
+        Path databasePath = tempDir.resolve("query.sqlite");
 
         try (ObjectCache cache = new ObjectCache(
                 configWithQuery(),
@@ -217,7 +229,6 @@ class ObjectCacheTest {
                     ComparisonOperator.GT,
                     new ValueExpression(50));
 
-            assertTrue(cache.isEnabled());
             assertEquals(Set.of("EntityId", "Hunger"), cache.subscriptions().get("SimEntity.Rabbit"));
             assertEquals(
                     "rabbit-one",
@@ -227,7 +238,7 @@ class ObjectCacheTest {
     }
 
     @Test
-    void enabledWhenQueryAppearsOnlyInTriggerCriteria(@TempDir Path tempDir) {
+    void queryInTriggerCriteriaSelectsRequiredSubscriptions(@TempDir Path tempDir) {
         StatementTrigger trigger = new StatementTrigger();
         trigger.statement = "{}";
         trigger.criteria = new Criterion(
@@ -249,13 +260,12 @@ class ObjectCacheTest {
                 fomXml,
                 decoderRegistry,
                 "jdbc:sqlite:" + tempDir.resolve("criteria-query.sqlite"))) {
-            assertTrue(cache.isEnabled());
             assertEquals(Set.of("EntityId", "Hunger"), cache.subscriptions().get("SimEntity.Rabbit"));
         }
     }
 
     @Test
-    void enabledWhenTrackedObjectsExistWithoutQueryInjections(@TempDir Path tempDir) {
+    void trackedObjectsSelectSubscriptionsWithoutQueryInjections(@TempDir Path tempDir) {
         Path databasePath = tempDir.resolve("tracked.sqlite");
 
         try (ObjectCache cache = new ObjectCache(
@@ -264,14 +274,13 @@ class ObjectCacheTest {
                 fomXml,
                 decoderRegistry,
                 "jdbc:sqlite:" + databasePath)) {
-            assertTrue(cache.isEnabled());
             assertEquals(Set.of("EntityId", "Hunger"), cache.subscriptions().get("SimEntity.Rabbit"));
             assertTrue(Files.exists(databasePath));
         }
     }
 
     @Test
-    void closeIsIdempotentAndDisablesCache(@TempDir Path tempDir) {
+    void closeIsIdempotent(@TempDir Path tempDir) {
         ObjectCache cache = new ObjectCache(
                 configWithQuery(),
                 catalog,
@@ -279,12 +288,8 @@ class ObjectCacheTest {
                 decoderRegistry,
                 "jdbc:sqlite:" + tempDir.resolve("close.sqlite"));
 
-        assertTrue(cache.isEnabled());
         cache.close();
         cache.close();
-
-        assertFalse(cache.isEnabled());
-        assertTrue(cache.currentObjects("SimEntity.Rabbit").isEmpty());
     }
 
     @Test

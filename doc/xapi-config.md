@@ -87,7 +87,7 @@ Create payloads are not aggregated across callbacks. If the first reflection con
 
 Update payloads are also callback-local. A `SimEntity` trigger activated by a Rabbit reflection containing only `Hunger` has no incoming `EntityId`, even if `EntityId` was cached earlier. A required `trigger` injection for `EntityId` suppresses that statement, while an optional injection renders `null`. Use `previous`, `query`, or `lookup` when the desired value should come from cached state.
 
-`ObjectDelete` reports that an object disappeared, not why it disappeared. It uses the final state retained by this adapter and therefore always activates the object cache. An object removed after discovery but before receiving attributes can still produce a static Delete statement; required missing values suppress a statement and optional values render `null`. Unknown, already removed, or duplicate removals are skipped.
+`ObjectDelete` reports that an object disappeared, not why it disappeared. It uses the final state retained by this adapter and therefore subscribes and caches the configured class's complete object state. An object removed after discovery but before receiving attributes can still produce a static Delete statement; required missing values suppress a statement and optional values render `null`. Unknown, already removed, or duplicate removals are skipped.
 
 Discovery and removal can race. If the object disappears before the adapter's bootstrap `requestAttributeValueUpdate` reaches the RTI, `ObjectInstanceNotKnown` is treated as expected and logged at debug level. Cached discovery metadata remains available to the removal callback.
 
@@ -253,7 +253,7 @@ All event contexts use the FOM to decode primitive values, fixed-record fields, 
 
 It supports primitive, fixed-record, and array paths. On the first observation, or when that attribute has not previously been reflected, it resolves as a missing value. Use `{"required": false}` to render `null` on that first observation. A cached null is distinct from a missing value and can be accepted with `{"nullable": true}`.
 
-Any `previous` reference activates the object cache and subscribes the referenced top-level attribute. All matching triggers in one reflection see the same pre-reflection state.
+Any `previous` reference adds the referenced top-level attribute to the cache subscription requirements. All matching triggers in one reflection see the same pre-reflection state.
 
 ### `query`
 
@@ -326,7 +326,9 @@ The alias must exist in the trigger's `lookups` map. An alias is resolved only w
 
 ## Object Cache
 
-The object cache stores the latest reflected values for subscribed HLA object attributes in SQLite or PostgreSQL. It is enabled when any of these are configured:
+The object cache stores the latest reflected values for subscribed HLA object attributes in SQLite or PostgreSQL. Its backing store is initialized whenever the adapter starts, even when the xAPI configuration does not require any object subscriptions. In that case the database contains the cache schema and current FOM metadata but no simulation objects.
+
+The adapter adds cache-specific object subscriptions when any of these are configured:
 
 - an ObjectUpdate trigger uses `previous`,
 - a statement template or trigger criterion contains a `query`,
@@ -334,9 +336,9 @@ The object cache stores the latest reflected values for subscribed HLA object at
 - an ObjectDelete trigger exists for a known FOM class, or
 - `objectCache.trackedObjects` explicitly requests tracked attributes.
 
-Incoming-only ObjectCreate and ObjectUpdate triggers do not enable SQL on their own. They still create event subscriptions for the configured class and every descendant, using each class's complete inherited and declared top-level attribute set.
+ObjectCreate and ObjectUpdate triggers also create event subscriptions for the configured class and every descendant, using each class's complete inherited and declared top-level attribute set. Reflections received through these event subscriptions are persisted because the backing store is always available, even when the trigger does not use cache-specific expressions.
 
-When enabled, the adapter subscribes to the top-level object attributes required by `previous`, query targets, query criteria, lookup targets, lookup criteria, ObjectDelete snapshots, and explicit tracked objects. A requirement configured on a FOM class is expanded to that class and its descendants. Referenced attribute lists are copied to every descendant, while ObjectDelete and `allAttributes` requirements use each descendant's complete inherited and declared top-level attribute set. Requirements configured on an ancestor and a discovered child are combined for the bootstrap attribute request. Use the `trackedObjects` array to force caching of simulation objects:
+The adapter subscribes to the top-level object attributes required by lifecycle events, `previous`, query targets, query criteria, lookup targets, lookup criteria, ObjectDelete snapshots, and explicit tracked objects. A requirement configured on a FOM class is expanded to that class and its descendants. Referenced attribute lists are copied to every descendant, while lifecycle events, ObjectDelete snapshots, and `allAttributes` requirements use each descendant's complete inherited and declared top-level attribute set. Requirements configured on an ancestor and a discovered child are combined for the bootstrap attribute request. Use the `trackedObjects` array to force caching of simulation objects that are not otherwise required by a trigger:
 
 ```json
 {
@@ -358,6 +360,7 @@ Tracked object fields:
 
 `HLA_OBJECT_CACHE_BACKEND` selects `sqlite` or `postgresql` case-insensitively. It defaults to `sqlite`.
 Backend and connection settings are runtime configuration and cannot be set in the xAPI JSON file.
+Invalid settings or a failure to connect to the selected backend prevent adapter startup, regardless of which cache features appear in the xAPI configuration.
 
 The cache decodes reflected values using the FOM and stores both top-level values and flattened nested values for fixed records and arrays. For example, reflecting `Position` can make `Position`, `Position.X`, and `Position.Y` available to query and lookup targets.
 

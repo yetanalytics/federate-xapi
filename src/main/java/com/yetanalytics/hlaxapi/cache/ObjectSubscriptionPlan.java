@@ -51,10 +51,6 @@ final class ObjectSubscriptionPlan {
         return subscriptions;
     }
 
-    boolean requiresCache() {
-        return !cacheSubscriptions.isEmpty();
-    }
-
     boolean hasSubscriptions() {
         return !subscriptions.isEmpty();
     }

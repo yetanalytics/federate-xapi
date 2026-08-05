@@ -5,8 +5,6 @@ import java.util.List;
 import java.util.Optional;
 
 interface ObjectCacheStore extends AutoCloseable {
-    boolean isOpen();
-
     CachedObject ensureObject(String objectHandle, String objectName, FomCatalog.ObjectClassDef clazz);
 
     Optional<ObjectSnapshot> findCurrentObjectSnapshot(String objectHandle);
