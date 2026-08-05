@@ -21,8 +21,8 @@ public class ObjectCache implements AutoCloseable {
     private final ObjectSubscriptionPlan subscriptionPlan;
     private final HlaValueFlattener valueFlattener;
     private final CacheQueryService queryService;
+    private final ObjectCacheStore store;
     private final AtomicLong sequence = new AtomicLong();
-    private ObjectCacheStore store;
 
     public ObjectCache(XapiConfig xapiConfig, FomCatalog catalog, FOMXML fomXml, HLADecoderRegistry decoderRegistry) {
         this(xapiConfig, catalog, fomXml, decoderRegistry, (ObjectCacheConnectionSettings) null);
@@ -53,16 +53,10 @@ public class ObjectCache implements AutoCloseable {
         this.subscriptionPlan = ObjectSubscriptionPlan.from(xapiConfig, catalog);
         this.valueFlattener = new HlaValueFlattener(fomXml, decoderRegistry);
         this.queryService = new CacheQueryService(this);
-        if (subscriptionPlan.requiresCache()) {
-            ObjectCacheConnectionSettings effectiveSettings = settings == null
-                    ? ObjectCacheConnectionSettings.from(System.getenv())
-                    : settings;
-            this.store = ObjectCacheStoreFactory.open(effectiveSettings, catalog);
-        }
-    }
-
-    public boolean isEnabled() {
-        return store != null && store.isOpen();
+        ObjectCacheConnectionSettings effectiveSettings = settings == null
+                ? ObjectCacheConnectionSettings.from(System.getenv())
+                : settings;
+        this.store = ObjectCacheStoreFactory.open(effectiveSettings, catalog);
     }
 
     public Map<String, Set<String>> subscriptions() {
@@ -94,45 +88,28 @@ public class ObjectCache implements AutoCloseable {
     }
 
     public Optional<Object> findFirstValue(String clazz, Target attrTarget, Expression criteria) {
-        if (!isEnabled()) {
-            return Optional.empty();
-        }
         return queryService.findFirstValue(clazz, attrTarget, criteria);
     }
 
     public ValueResolution findFirstResolution(String clazz, Target attrTarget, Expression criteria) {
-        if (!isEnabled()) {
-            return ValueResolution.missingObject();
-        }
         return queryService.findFirstResolution(clazz, attrTarget, criteria);
     }
 
     public Optional<CachedObject> findFirstObject(String clazz, Expression criteria) {
-        if (!isEnabled()) {
-            return Optional.empty();
-        }
         return queryService.findFirstObject(clazz, criteria);
     }
 
     public Optional<Object> findValue(CachedObject object, Target attrTarget) {
-        if (!isEnabled()) {
-            return Optional.empty();
-        }
         return queryService.findValue(object, attrTarget);
     }
 
     public ValueResolution findValueResolution(CachedObject object, Target attrTarget) {
-        if (!isEnabled()) {
-            return ValueResolution.missingObject();
-        }
         return queryService.findValueResolution(object, attrTarget);
     }
 
     public synchronized void discoverObject(String objectHandle, String objectName, String className) {
-        if (isEnabled()) {
-            FomCatalog.ObjectClassDef clazz = requireClass(className);
-            store.ensureObject(objectHandle, objectName, clazz);
-        }
+        FomCatalog.ObjectClassDef clazz = requireClass(className);
+        store.ensureObject(objectHandle, objectName, clazz);
     }
 
     public void reflectAttributeValue(
@@ -147,9 +124,6 @@ public class ObjectCache implements AutoCloseable {
             String objectHandle,
             String className,
             Map<String, byte[]> attributes) {
-        if (!isEnabled()) {
-            return;
-        }
         if (attributes == null || attributes.isEmpty()) {
             return;
         }
@@ -177,39 +151,24 @@ public class ObjectCache implements AutoCloseable {
     }
 
     public synchronized void removeObject(String objectHandle) {
-        if (!isEnabled()) {
-            return;
-        }
         store.removeObject(objectHandle, Instant.now().toString());
     }
 
     public synchronized Optional<ObjectSnapshot> findCurrentObjectSnapshot(String objectHandle) {
-        if (!isEnabled()) {
-            return Optional.empty();
-        }
         return store.findCurrentObjectSnapshot(objectHandle);
     }
 
     public synchronized Optional<CachedValue> findCurrentValue(long instanceId, String pathKey) {
-        if (!isEnabled()) {
-            return Optional.empty();
-        }
         return store.findCurrentValue(instanceId, pathKey);
     }
 
     public synchronized Optional<CachedValue> findCurrentValue(String objectHandle, String pathKey) {
-        if (!isEnabled()) {
-            return Optional.empty();
-        }
         return store.findCurrentValue(objectHandle, pathKey);
     }
 
     public synchronized ValueResolution findCurrentValueResolution(
             String objectHandle,
             Target target) {
-        if (!isEnabled()) {
-            return ValueResolution.missingObject();
-        }
         String pathKey = FomCatalog.targetPath(target == null ? null : target.parts);
         if (pathKey == null) {
             return ValueResolution.missingValue();
@@ -220,16 +179,13 @@ public class ObjectCache implements AutoCloseable {
     }
 
     public synchronized List<CachedObject> currentObjects(String className) {
-        if (!isEnabled()) {
-            return List.of();
-        }
         FomCatalog.ObjectClassDef requestedClass = requireClass(className);
         return store.currentObjects(
                 catalog.objectClassAndDescendants(requestedClass.hlaName()));
     }
 
     Connection connection() {
-        return store == null ? null : store.connection();
+        return store.connection();
     }
 
     ObjectCacheStore store() {
@@ -238,11 +194,7 @@ public class ObjectCache implements AutoCloseable {
 
     @Override
     public synchronized void close() {
-        if (store == null) {
-            return;
-        }
         store.close();
-        store = null;
     }
 
     private FomCatalog.ObjectClassDef requireClass(String className) {

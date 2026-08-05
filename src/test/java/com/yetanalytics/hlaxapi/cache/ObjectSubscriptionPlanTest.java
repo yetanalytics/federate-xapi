@@ -1,7 +1,6 @@
 package com.yetanalytics.hlaxapi.cache;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -64,7 +63,7 @@ class ObjectSubscriptionPlanTest {
     }
 
     @Test
-    void lifecycleBaseClassSubscribesEveryDescendantToItsCompleteAttributesWithoutCache() {
+    void lifecycleBaseClassHasNoCacheSpecificRequirements() {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
                 objectTrigger(StatementTrigger.Type.OBJECT_CREATE, "SimEntity"),
@@ -73,7 +72,6 @@ class ObjectSubscriptionPlanTest {
 
         ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
 
-        assertFalse(plan.requiresCache());
         assertTrue(plan.cacheSubscriptions().isEmpty());
         assertCompleteHierarchy(plan.eventSubscriptions());
         assertCompleteHierarchy(plan.subscriptions());
@@ -87,7 +85,6 @@ class ObjectSubscriptionPlanTest {
 
         ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
 
-        assertTrue(plan.requiresCache());
         assertCompleteHierarchy(plan.cacheSubscriptions());
         assertCompleteHierarchy(plan.eventSubscriptions());
         assertCompleteHierarchy(plan.subscriptions());
@@ -115,7 +112,6 @@ class ObjectSubscriptionPlanTest {
 
         ObjectSubscriptionPlan plan = ObjectSubscriptionPlan.from(config, catalog);
 
-        assertTrue(plan.requiresCache());
         for (FomCatalog.ObjectClassDef clazz :
                 catalog.objectClassAndDescendants("SimEntity")) {
             assertEquals(
@@ -156,8 +152,6 @@ class ObjectSubscriptionPlanTest {
         ObjectSubscriptionPlan allPlan =
                 ObjectSubscriptionPlan.from(allConfig, catalog);
 
-        assertTrue(explicitPlan.requiresCache());
-        assertTrue(allPlan.requiresCache());
         assertCompleteHierarchy(allPlan.cacheSubscriptions());
     }
 

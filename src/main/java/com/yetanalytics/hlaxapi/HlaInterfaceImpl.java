@@ -124,10 +124,6 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         RtiFactory rtiFactory = RtiFactoryFactory.getRtiFactory();
         ambassador = rtiFactory.getRtiAmbassador();
 
-        if (!objectCache.isEnabled()) {
-            logger.info("No query injections or tracked objects configured; object cache is disabled");
-        }
-
         try {
             if (simulationConfig.getLocalSettingsDesignator() == null
                     || simulationConfig.getLocalSettingsDesignator().isBlank()) {
@@ -304,12 +300,10 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 className)) {
             pendingObjectCreates.put(theObject.toString(), className);
         }
-        if (objectCache.isEnabled()) {
-            try {
-                objectCache.discoverObject(theObject.toString(), objectName, className);
-            } catch (RuntimeException e) {
-                logger.error("Error caching discovered object {}", objectName, e);
-            }
+        try {
+            objectCache.discoverObject(theObject.toString(), objectName, className);
+        } catch (RuntimeException e) {
+            logger.error("Error caching discovered object {}", objectName, e);
         }
         try {
             AttributeHandleSet attributeHandles = attributeHandles(theObjectClass, subscribedAttributes);
@@ -449,9 +443,6 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     private void removeCachedObject(ObjectInstanceHandle theObject) {
         String objectHandle = theObject.toString();
         pendingObjectCreates.remove(objectHandle);
-        if (!objectCache.isEnabled()) {
-            return;
-        }
         try {
             ObjectSnapshot snapshot = objectCache.findCurrentObjectSnapshot(objectHandle).orElse(null);
             List<TriggerProcessor.StagedStatement> statements = List.of();

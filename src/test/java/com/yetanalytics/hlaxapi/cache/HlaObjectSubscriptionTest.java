@@ -64,6 +64,8 @@ class HlaObjectSubscriptionTest {
             new SimulationConfig(null, null, null, null, "config/HlaFedereplFOM.xml"),
             decoderRegistry);
     private final FomCatalog catalog = new FomCatalog(fomXml);
+    @TempDir
+    private Path tempDir;
 
     @Test
     void eventOnlyConfigurationSubscribesRequestsAndProcessesReflections() throws Exception {
@@ -72,14 +74,13 @@ class HlaObjectSubscriptionTest {
         Set<String> expectedAttributes =
                 Set.copyOf(catalog.objectClass("SimEntity.Rabbit").orElseThrow().topLevelAttributeNames());
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+        try (ObjectCache cache = objectCache(config)) {
             RecordingRti rti = new RecordingRti();
             RecordingXapiClient xapiClient = new RecordingXapiClient();
             HlaInterfaceImpl hlaInterface = hlaInterface(cache, rti.proxy(), config, xapiClient);
 
             subscribeObjectClasses(hlaInterface);
 
-            assertFalse(cache.isEnabled());
             assertEquals(List.of(new ObjectSubscription("SimEntity.Rabbit", expectedAttributes)), rti.subscriptions);
 
             ObjectClassHandle rabbitClass = rti.classHandle("SimEntity.Rabbit");
@@ -97,7 +98,8 @@ class HlaObjectSubscriptionTest {
 
             assertEquals(1, rti.knownClassResolutions);
             assertEquals(1, rti.attributeNameResolutions);
-            assertTrue(cache.currentObjects("SimEntity.Rabbit").isEmpty());
+            assertEquals(1, cache.currentObjects("SimEntity.Rabbit").size());
+            assertEquals(12, cache.findCurrentValue(rabbit.toString(), "Hunger").orElseThrow().value());
             assertEquals(List.of("{}"), xapiClient.statements);
         }
     }
@@ -119,7 +121,7 @@ class HlaObjectSubscriptionTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(create, update);
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+        try (ObjectCache cache = objectCache(config)) {
             RecordingRti rti = new RecordingRti();
             RecordingXapiClient xapiClient = new RecordingXapiClient();
             HlaInterfaceImpl hlaInterface = hlaInterface(
@@ -136,7 +138,7 @@ class HlaObjectSubscriptionTest {
             reflect(hlaInterface, rabbit, hunger, 12);
             reflect(hlaInterface, rabbit, hunger, 13);
 
-            assertFalse(cache.isEnabled());
+            assertEquals(13, cache.findCurrentValue(rabbit.toString(), "Hunger").orElseThrow().value());
             assertEquals(
                     List.of(
                             "{\"event\":\"create\",\"hunger\":12}",
@@ -325,7 +327,7 @@ class HlaObjectSubscriptionTest {
         config.statementTriggers =
                 List.of(objectTrigger(StatementTrigger.Type.OBJECT_CREATE, "SimEntity.Rabbit", "{}"));
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+        try (ObjectCache cache = objectCache(config)) {
             RecordingRti rti = new RecordingRti();
             RecordingXapiClient xapiClient = new RecordingXapiClient();
             HlaInterfaceImpl hlaInterface =
@@ -358,7 +360,7 @@ class HlaObjectSubscriptionTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(required, optional);
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+        try (ObjectCache cache = objectCache(config)) {
             RecordingRti rti = new RecordingRti();
             RecordingXapiClient xapiClient = new RecordingXapiClient();
             HlaInterfaceImpl hlaInterface =
@@ -631,7 +633,7 @@ class HlaObjectSubscriptionTest {
         config.statementTriggers =
                 List.of(passing, requiredMissing, optionalMissing, skipped, wrongClass, wrongType);
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+        try (ObjectCache cache = objectCache(config)) {
             RecordingRti rti = new RecordingRti();
             RecordingXapiClient xapiClient = new RecordingXapiClient();
             HlaInterfaceImpl hlaInterface = hlaInterface(
@@ -652,7 +654,7 @@ class HlaObjectSubscriptionTest {
 
             hlaInterface.reflectAttributeValues(rabbit, reflection, null, null, null, null);
 
-            assertFalse(cache.isEnabled());
+            assertEquals(12, cache.findCurrentValue(rabbit.toString(), "Hunger").orElseThrow().value());
             assertEquals(2, rti.attributeNameResolutions);
             assertEquals(
                     List.of(
@@ -714,7 +716,6 @@ class HlaObjectSubscriptionTest {
 
             hlaInterface.reflectAttributeValues(rabbit, reflection, null, null, null, null);
 
-            assertTrue(cache.isEnabled());
             assertEquals(19, hungerAtEnqueue.get());
             assertEquals(
                     List.of("{\"incoming\":19,\"queried\":5,\"lookedUp\":5}"),
@@ -943,7 +944,6 @@ class HlaObjectSubscriptionTest {
 
             hlaInterface.discoverObjectInstance(rabbit, rabbitClass, "Rabbit Two");
 
-            assertTrue(cache.isEnabled());
             assertEquals(1, cache.currentObjects("SimEntity.Rabbit").size());
             assertEquals("Rabbit Two", cache.currentObjects("SimEntity.Rabbit").get(0).objectName());
             assertEquals(cache.subscriptions().get("SimEntity.Rabbit"), rti.requests.get(0).attributes());
@@ -1144,7 +1144,7 @@ class HlaObjectSubscriptionTest {
                         "SimEntity.Rabbit",
                         "{\"event\":\"rabbit-update\"}"));
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+        try (ObjectCache cache = objectCache(config)) {
             RecordingRti rti = new RecordingRti();
             RecordingXapiClient xapiClient = new RecordingXapiClient();
             HlaInterfaceImpl hlaInterface =
@@ -1190,7 +1190,7 @@ class HlaObjectSubscriptionTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(objectUpdateTrigger("MissingObject"));
 
-        try (ObjectCache cache = new ObjectCache(config, catalog, fomXml, decoderRegistry)) {
+        try (ObjectCache cache = objectCache(config)) {
             RecordingRti rti = new RecordingRti();
 
             subscribeObjectClasses(hlaInterface(
@@ -1211,6 +1211,15 @@ class HlaObjectSubscriptionTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(query, objectUpdateTrigger("SimEntity.Rabbit"));
         return config;
+    }
+
+    private ObjectCache objectCache(XapiConfig config) {
+        return new ObjectCache(
+                config,
+                catalog,
+                fomXml,
+                decoderRegistry,
+                "jdbc:sqlite:" + tempDir.resolve("object-cache.sqlite"));
     }
 
     private StatementTrigger objectUpdateTrigger(String className) {
