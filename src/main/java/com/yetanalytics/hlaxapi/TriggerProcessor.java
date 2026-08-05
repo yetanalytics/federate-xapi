@@ -85,13 +85,12 @@ public class TriggerProcessor {
     public record StagedStatement(StatementTrigger trigger, String statement) {
     }
 
-    public List<StagedStatement> stage(
-            StatementTrigger.Type eventType,
-            String hlaClass,
-            InjectionContext context) {
+    public List<StagedStatement> stage(InjectionContext context) {
         if (xapiConfig.statementTriggers == null) {
             return List.of();
         }
+        StatementTrigger.Type eventType = context.eventType();
+        String hlaClass = context.getHlaClass();
         List<StagedStatement> statements = new ArrayList<>();
         for (StatementTrigger trigger : xapiConfig.statementTriggers) {
             if (!matchesTrigger(trigger, eventType, hlaClass)) {
@@ -157,11 +156,9 @@ public class TriggerProcessor {
     }
 
     public void dispatch(
-            StatementTrigger.Type eventType,
-            String hlaClass,
             InjectionContext context,
             Consumer<String> statementSink) {
-        enqueue(stage(eventType, hlaClass, context), statementSink);
+        enqueue(stage(context), statementSink);
     }
 
     public TriggerProcessingResult processTrigger(StatementTrigger trigger, InjectionContext context) {
@@ -179,9 +176,16 @@ public class TriggerProcessor {
         if (trigger == null || trigger.statement == null) {
             return null;
         }
+        if (context == null) {
+            return TriggerProcessingResult.failed(
+                    new IllegalArgumentException("Injection context is required"));
+        }
+        if (trigger.type != context.eventType()) {
+            return TriggerProcessingResult.failed(new IllegalArgumentException(
+                    "Trigger type " + trigger.type
+                            + " does not match injection context type " + context.eventType()));
+        }
         ObjectMapper mapper = new ObjectMapper();
-        StatementTrigger.Type previousTriggerType = context.getTriggerType();
-        context.setTriggerType(trigger.type);
         try {
             if (!evaluateCriteria && context instanceof TestInjectionContext testContext) {
                 injectionHandler.validateCriteriaSources(trigger, testContext);
@@ -202,8 +206,6 @@ public class TriggerProcessor {
         } catch (Exception e) {
             logger.error("Could not process trigger {}.{}: {}", trigger.type, trigger.clazz, e.getMessage(), e);
             return TriggerProcessingResult.failed(e);
-        } finally {
-            context.setTriggerType(previousTriggerType);
         }
     }
 

@@ -3,6 +3,7 @@ package com.yetanalytics.hlaxapi;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.yetanalytics.extension.SuppressTestLogging;
@@ -17,7 +18,11 @@ import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
+import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectCreateInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectDeleteInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import java.nio.ByteOrder;
 import java.util.List;
@@ -34,7 +39,8 @@ class ObjectInjectionHandlerTest {
     void objectContextCarriesClassHandleAndIncomingAttributes() {
         byte[] count = HLAEncodingTestSupport.int32(4, ByteOrder.BIG_ENDIAN);
         ObjectInjectionContext context =
-                new ObjectInjectionContext("BaseEntity.TrackedEntity", "object-17", Map.of("Count", count));
+                new ObjectUpdateInjectionContext(
+                        "BaseEntity.TrackedEntity", "object-17", Map.of("Count", count));
 
         assertEquals("BaseEntity.TrackedEntity", context.getHlaClass());
         assertEquals("object-17", context.getObjectHandle());
@@ -46,7 +52,7 @@ class ObjectInjectionHandlerTest {
         InjectionHandler handler = handler(OBJECT_FOM);
         byte[] position = position(12, 18);
         byte[] history = HLAEncodingTestSupport.variableArray(position(1, 2), position(3, 4));
-        ObjectInjectionContext context = new ObjectInjectionContext(
+        ObjectInjectionContext context = new ObjectUpdateInjectionContext(
                 "BaseEntity.TrackedEntity",
                 "object-17",
                 Map.of(
@@ -72,10 +78,10 @@ class ObjectInjectionHandlerTest {
 
         ValueResolution absent = handler.handleTrigger(
                 target("Count"),
-                new ObjectInjectionContext("BaseEntity.TrackedEntity", "object-17", Map.of()));
+                new ObjectUpdateInjectionContext("BaseEntity.TrackedEntity", "object-17", Map.of()));
         ValueResolution malformed = handler.handleTrigger(
                 target("Count"),
-                new ObjectInjectionContext(
+                new ObjectUpdateInjectionContext(
                         "BaseEntity.TrackedEntity",
                         "object-17",
                         Map.of("Count", new byte[] {1})));
@@ -259,6 +265,29 @@ class ObjectInjectionHandlerTest {
         }
     }
 
+    @Test
+    void runtimePreviousOnlyAcceptsObjectUpdateContexts() {
+        InjectionHandler handler = handler(OBJECT_FOM);
+        Target count = target("Count");
+
+        assertEquals(
+                ValueResolution.Status.MISSING_OBJECT,
+                handler.handlePrevious(
+                        count,
+                        new ObjectUpdateInjectionContext(
+                                "BaseEntity.TrackedEntity", "object-17", Map.of()))
+                        .status());
+        assertThrows(IllegalArgumentException.class, () -> handler.handlePrevious(
+                count,
+                new ObjectCreateInjectionContext("BaseEntity.TrackedEntity", "object-17", Map.of())));
+        assertThrows(IllegalArgumentException.class, () -> handler.handlePrevious(
+                count,
+                new ObjectDeleteInjectionContext("BaseEntity.TrackedEntity", "object-17", Map.of())));
+        assertThrows(IllegalArgumentException.class, () -> handler.handlePrevious(
+                count,
+                new InteractionInjectionContext("BaseEntity.TrackedEntity", Map.of())));
+    }
+
     private InjectionHandler handler(String fomPath) {
         HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
         FOMXML fomXml = new FOMXML(
@@ -307,10 +336,24 @@ class ObjectInjectionHandlerTest {
 
         TriggerProcessor.TriggerProcessingResult result = processor.processTrigger(
                 trigger,
-                new ObjectInjectionContext("BaseEntity.TrackedEntity", "object-17", attributes));
+                objectContext(type, attributes));
 
         assertTrue(result.success(), type + " " + target);
         assertEquals("{\"value\":null}", result.statement(), type + " " + target);
+    }
+
+    private ObjectInjectionContext objectContext(
+            StatementTrigger.Type type,
+            Map<String, byte[]> attributes) {
+        return switch (type) {
+            case OBJECT_CREATE -> new ObjectCreateInjectionContext(
+                    "BaseEntity.TrackedEntity", "object-17", attributes);
+            case OBJECT_UPDATE -> new ObjectUpdateInjectionContext(
+                    "BaseEntity.TrackedEntity", "object-17", attributes);
+            case OBJECT_DELETE -> new ObjectDeleteInjectionContext(
+                    "BaseEntity.TrackedEntity", "object-17", attributes);
+            case INTERACTION -> throw new IllegalArgumentException("Interaction is not an object event");
+        };
     }
 
     private Target target(Object... parts) {

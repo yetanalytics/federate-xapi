@@ -9,7 +9,8 @@ public abstract class InjectionContext {
     private List<Object> statementPath = List.of();
     private boolean embedded = false;
     private String objectType;
-    private StatementTrigger.Type triggerType;
+
+    public abstract StatementTrigger.Type eventType();
 
     public String getHlaClass() {
         return hlaClass;
@@ -48,11 +49,4 @@ public abstract class InjectionContext {
         this.objectType = objectType;
     }
 
-    public StatementTrigger.Type getTriggerType() {
-        return triggerType;
-    }
-
-    public void setTriggerType(StatementTrigger.Type triggerType) {
-        this.triggerType = triggerType;
-    }
 }

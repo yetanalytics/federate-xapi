@@ -29,6 +29,7 @@ import com.yetanalytics.hlaxapi.config.model.ValueExpression;
 import com.yetanalytics.hlaxapi.injection.InjectionContext;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import com.yetanalytics.hlaxapi.injection.XapiValueGenerator;
 
@@ -76,7 +77,7 @@ public class InjectionHandler {
         EventTargetDefinition target = requireEventTargetDefinition(
                 context.getHlaClass(),
                 t,
-                context.getTriggerType() != null && context.getTriggerType().isObjectEvent(),
+                context.eventType().isObjectEvent(),
                 "trigger");
         return testValue(target, t, context);
     }
@@ -373,27 +374,34 @@ public class InjectionHandler {
     }
 
     public ValueResolution handlePrevious(Target target, InjectionContext context) {
-        if (context == null
-                || context.getTriggerType() != StatementTrigger.Type.OBJECT_UPDATE) {
+        if (context instanceof TestInjectionContext testContext) {
+            return handlePrevious(target, testContext);
+        }
+        if (context instanceof ObjectUpdateInjectionContext objectContext) {
+            return handlePrevious(target, objectContext);
+        }
+        throw new IllegalArgumentException(
+                "previous values are only available to ObjectUpdate triggers");
+    }
+
+    public ValueResolution handlePrevious(Target target, TestInjectionContext context) {
+        if (context.eventType() != StatementTrigger.Type.OBJECT_UPDATE) {
             throw new IllegalArgumentException(
                     "previous values are only available to ObjectUpdate triggers");
         }
-        if (context instanceof TestInjectionContext testContext) {
-            EventTargetDefinition definition = requireObjectTargetDefinition(
-                    testContext.getHlaClass(),
-                    target,
-                    "previous");
-            return testValue(definition, target, testContext);
-        }
-        if (!(context instanceof ObjectInjectionContext objectContext)) {
-            throw new IllegalArgumentException(
-                    "previous values require an object update context");
-        }
+        EventTargetDefinition definition = requireObjectTargetDefinition(
+                context.getHlaClass(),
+                target,
+                "previous");
+        return testValue(definition, target, context);
+    }
+
+    public ValueResolution handlePrevious(Target target, ObjectUpdateInjectionContext context) {
         if (objectCache == null) {
             return ValueResolution.missingObject();
         }
         return objectCache.findCurrentValueResolution(
-                objectContext.getObjectHandle(),
+                context.getObjectHandle(),
                 target);
     }
 
@@ -468,12 +476,11 @@ public class InjectionHandler {
                             requireEventTargetDefinition(
                                     event.getHlaClass(),
                                     trigger.target,
-                                    event.getTriggerType() != null
-                                            && event.getTriggerType().isObjectEvent(),
+                                    event.eventType().isObjectEvent(),
                                     "trigger");
                         } else if (candidate instanceof PreviousExpression previous) {
                             TestInjectionContext event = state.eventContext();
-                            if (event.getTriggerType() != StatementTrigger.Type.OBJECT_UPDATE) {
+                            if (event.eventType() != StatementTrigger.Type.OBJECT_UPDATE) {
                                 throw new IllegalArgumentException(
                                         "previous values are only available to ObjectUpdate triggers");
                             }

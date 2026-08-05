@@ -1,6 +1,8 @@
 package com.yetanalytics.hlaxapi;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import com.yetanalytics.extension.SuppressTestLogging;
 import com.yetanalytics.hlaxapi.TriggerProcessor.TriggerProcessingResult;
@@ -8,7 +10,9 @@ import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
-import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectCreateInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectDeleteInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -37,9 +41,7 @@ class TriggerProcessorDispatchTest {
         ControlledTriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
 
         List<TriggerProcessor.StagedStatement> staged = processor.stage(
-                StatementTrigger.Type.OBJECT_UPDATE,
-                "SimEntity.Rabbit",
-                new ObjectInjectionContext("SimEntity.Rabbit", "object-1", Map.of()));
+                new ObjectUpdateInjectionContext("SimEntity.Rabbit", "object-1", Map.of()));
 
         assertEquals(List.of("first", "second"),
                 staged.stream().map(TriggerProcessor.StagedStatement::statement).toList());
@@ -67,8 +69,6 @@ class TriggerProcessorDispatchTest {
         List<String> enqueued = new ArrayList<>();
 
         processor.dispatch(
-                StatementTrigger.Type.INTERACTION,
-                "SimEntity.Rabbit",
                 new InteractionInjectionContext("SimEntity.Rabbit", Map.of()),
                 enqueued::add);
 
@@ -86,16 +86,13 @@ class TriggerProcessorDispatchTest {
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Rabbit", "rabbit-delete"),
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Wolf", "wolf-delete"));
         TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
-        ObjectInjectionContext rabbit =
-                new ObjectInjectionContext("SimEntity.Rabbit", "object-1", Map.of());
-
         List<String> createStatements = processor
-                .stage(StatementTrigger.Type.OBJECT_CREATE, "SimEntity.Rabbit", rabbit)
+                .stage(new ObjectCreateInjectionContext("SimEntity.Rabbit", "object-1", Map.of()))
                 .stream()
                 .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
         List<String> deleteStatements = processor
-                .stage(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Rabbit", rabbit)
+                .stage(new ObjectDeleteInjectionContext("SimEntity.Rabbit", "object-1", Map.of()))
                 .stream()
                 .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
@@ -117,11 +114,11 @@ class TriggerProcessorDispatchTest {
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Wolf", "wolf-update"),
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "MissingObject", "unknown-update"));
         TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
-        ObjectInjectionContext rabbit =
-                new ObjectInjectionContext("SimEntity.Rabbit", "object-1", Map.of());
+        ObjectUpdateInjectionContext rabbit =
+                new ObjectUpdateInjectionContext("SimEntity.Rabbit", "object-1", Map.of());
 
         List<String> updateStatements = processor
-                .stage(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", rabbit)
+                .stage(rabbit)
                 .stream()
                 .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
@@ -129,6 +126,32 @@ class TriggerProcessorDispatchTest {
         assertEquals(
                 List.of("sim-entity-update", "rabbit-update"),
                 updateStatements);
+    }
+
+    @Test
+    void runtimeContextTypesAreFixed() {
+        assertEquals(
+                StatementTrigger.Type.INTERACTION,
+                new InteractionInjectionContext().eventType());
+        assertEquals(
+                StatementTrigger.Type.OBJECT_CREATE,
+                new ObjectCreateInjectionContext().eventType());
+        assertEquals(
+                StatementTrigger.Type.OBJECT_UPDATE,
+                new ObjectUpdateInjectionContext().eventType());
+        assertEquals(
+                StatementTrigger.Type.OBJECT_DELETE,
+                new ObjectDeleteInjectionContext().eventType());
+    }
+
+    @Test
+    void rejectsTriggerAndContextTypeMismatch() {
+        TriggerProcessingResult result = new TriggerProcessor(new InjectionHandler()).processTrigger(
+                trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Rabbit", "{}"),
+                new InteractionInjectionContext("SimEntity.Rabbit", Map.of()));
+
+        assertFalse(result.success());
+        assertInstanceOf(IllegalArgumentException.class, result.error());
     }
 
     private StatementTrigger trigger(StatementTrigger.Type type, String className, String statement) {

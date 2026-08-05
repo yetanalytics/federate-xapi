@@ -23,7 +23,9 @@ import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.exception.XapiConfigurationException;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
-import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectCreateInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectDeleteInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import com.yetanalytics.xapi.util.StatementValidator;
 import com.yetanalytics.xapi.util.StatementValidator.StatementValidationResult;
@@ -379,16 +381,18 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
                 logger.debug("Ignoring empty reflection for object {}", theObject);
                 return;
             }
-            ObjectInjectionContext context =
-                    new ObjectInjectionContext(className, theObject.toString(), attributes);
             boolean createPending = className.equals(pendingObjectCreates.get(theObject.toString()));
             List<TriggerProcessor.StagedStatement> statements = new ArrayList<>();
             if (createPending) {
-                statements.addAll(
-                        triggerProcessor.stage(StatementTrigger.Type.OBJECT_CREATE, className, context));
+                statements.addAll(triggerProcessor.stage(new ObjectCreateInjectionContext(
+                        className,
+                        theObject.toString(),
+                        attributes)));
             }
-            statements.addAll(
-                    triggerProcessor.stage(StatementTrigger.Type.OBJECT_UPDATE, className, context));
+            statements.addAll(triggerProcessor.stage(new ObjectUpdateInjectionContext(
+                    className,
+                    theObject.toString(),
+                    attributes)));
             objectCache.reflectAttributeValues(theObject.toString(), className, attributes);
             if (createPending) {
                 pendingObjectCreates.remove(theObject.toString(), className);
@@ -442,14 +446,11 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             ObjectSnapshot snapshot = objectCache.findCurrentObjectSnapshot(objectHandle).orElse(null);
             List<TriggerProcessor.StagedStatement> statements = List.of();
             if (snapshot != null) {
-                ObjectInjectionContext context = new ObjectInjectionContext(
+                ObjectDeleteInjectionContext context = new ObjectDeleteInjectionContext(
                         snapshot.className(),
                         snapshot.objectHandle(),
                         snapshot.attributes());
-                statements = triggerProcessor.stage(
-                        StatementTrigger.Type.OBJECT_DELETE,
-                        snapshot.className(),
-                        context);
+                statements = triggerProcessor.stage(context);
             } else {
                 logger.debug("Skipping ObjectDelete triggers for unknown or removed object {}", theObject);
                 return;
@@ -524,11 +525,7 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             InteractionInjectionContext context = new InteractionInjectionContext(interactionKey,
                     getMapWithParameterNames(interactionClass, theParameters));
 
-            triggerProcessor.dispatch(
-                    StatementTrigger.Type.INTERACTION,
-                    interactionKey,
-                    context,
-                    xapiClient::sendStatement);
+            triggerProcessor.dispatch(context, xapiClient::sendStatement);
         } catch (InvalidInteractionClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError e) {
             logger.error("Error ascertaining interaction details!", e);
         }

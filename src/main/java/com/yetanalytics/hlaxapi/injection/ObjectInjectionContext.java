@@ -2,15 +2,15 @@ package com.yetanalytics.hlaxapi.injection;
 
 import java.util.Map;
 
-public class ObjectInjectionContext extends InjectionContext {
+public abstract class ObjectInjectionContext extends InjectionContext {
 
     private String objectHandle;
     private Map<String, byte[]> attributeMap = Map.of();
 
-    public ObjectInjectionContext() {
+    protected ObjectInjectionContext() {
     }
 
-    public ObjectInjectionContext(
+    protected ObjectInjectionContext(
             String hlaClass,
             String objectHandle,
             Map<String, byte[]> attributeMap) {

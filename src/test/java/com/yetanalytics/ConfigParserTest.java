@@ -399,6 +399,7 @@ public class ConfigParserTest {
         String stmt = "{\"actor\":{\"name\":\"predator-<<[\\\"trigger\\\", [\\\"EntityId\\\"]]>>-prey\"}}";
 
         com.yetanalytics.hlaxapi.config.model.StatementTrigger st = new com.yetanalytics.hlaxapi.config.model.StatementTrigger();
+        st.type = StatementTrigger.Type.INTERACTION;
         st.statement = stmt;
 
         String out = triggerProcessor.processTrigger(st, injectionContext).statement();
@@ -425,6 +426,7 @@ public class ConfigParserTest {
 
         String stmt = "{\"actor\":{\"name\":\"from=<<[\\\"trigger\\\", [\\\"EntityId\\\"]]>>, to=<<[\\\"trigger\\\", [\\\"EntityId\\\"]]>>\"}}";
         com.yetanalytics.hlaxapi.config.model.StatementTrigger st = new com.yetanalytics.hlaxapi.config.model.StatementTrigger();
+        st.type = StatementTrigger.Type.INTERACTION;
         st.statement = stmt;
 
         String out = triggerProcessor.processTrigger(st, injectionContext).statement();
@@ -446,6 +448,7 @@ public class ConfigParserTest {
 
         String stmt = "{\"actor\":{\"name\":\"<<[\\\"trigger\\\", [\\\"Description\\\"]]>>\"}}";
         com.yetanalytics.hlaxapi.config.model.StatementTrigger st = new com.yetanalytics.hlaxapi.config.model.StatementTrigger();
+        st.type = StatementTrigger.Type.INTERACTION;
         st.statement = stmt;
 
         String out = triggerProcessor.processTrigger(st, injectionContext).statement();
@@ -464,6 +467,7 @@ public class ConfigParserTest {
             }
         };
         StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.INTERACTION;
         trigger.statement = """
                 {
                   "actor": {"name": ["trigger", ["Name"]]},
@@ -509,6 +513,7 @@ public class ConfigParserTest {
 
         TriggerProcessor triggerProcessor = new TriggerProcessor(ih);
         StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.INTERACTION;
         ObjectLookup lookup = new ObjectLookup();
         lookup.clazz = "SimEntity";
         lookup.criteria = new Criterion(
@@ -698,6 +703,7 @@ public class ConfigParserTest {
 
     private StatementTrigger statementTrigger(String statement) {
         StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.INTERACTION;
         trigger.statement = statement;
         return trigger;
     }

@@ -26,7 +26,7 @@ import com.yetanalytics.hlaxapi.config.model.TrackedObject;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
-import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
 import hla.rti1516e.encoding.DataElement;
 import hla.rti1516e.encoding.EncoderException;
 import hla.rti1516e.encoding.EncoderFactory;
@@ -502,9 +502,8 @@ abstract class ObjectCachePersistenceTest {
             injectionHandler.setHLADecoderRegistry(decoderRegistry);
             injectionHandler.setFomCatalog(dynamicArrayCatalog);
             setField(injectionHandler, "objectCache", cache);
-            ObjectInjectionContext context =
-                    new ObjectInjectionContext("Rabbit", "rabbit-1", Map.of());
-            context.setTriggerType(StatementTrigger.Type.OBJECT_UPDATE);
+            ObjectUpdateInjectionContext context =
+                    new ObjectUpdateInjectionContext("Rabbit", "rabbit-1", Map.of());
 
             ValueResolution nested = injectionHandler.handlePrevious(
                     new Target(List.of("Position", "X")),
