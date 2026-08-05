@@ -13,10 +13,8 @@ import com.yetanalytics.hlaxapi.config.model.ComparisonOperator;
 import com.yetanalytics.hlaxapi.config.model.Criterion;
 import com.yetanalytics.hlaxapi.config.model.Expression;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
-import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
-import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectCreateInjectionContext;
@@ -119,7 +117,7 @@ class ObjectInjectionHandlerTest {
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
-    void validatesEveryObjectEventTargetAgainstInheritedObjectAttributes() {
+    void rendersInheritedObjectTargetsAndChecksTheirStatementDatatype() {
         TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
         for (StatementTrigger.Type type : List.of(
                 StatementTrigger.Type.OBJECT_CREATE,
@@ -148,34 +146,7 @@ class ObjectInjectionHandlerTest {
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
-    void rejectsMissingObjectTargetsInStatementsAndCriteriaEvenWhenOptional() {
-        TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
-        TestInjectionContext context =
-                new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "BaseEntity.TrackedEntity");
-        StatementTrigger missingTrigger = trigger("""
-                {"missing":["trigger",["NotAnAttribute"],{"required":false}]}
-                """);
-        StatementTrigger missingPrevious = trigger("""
-                {"missing":["previous",["NotAnAttribute"],{"required":false}]}
-                """);
-        StatementTrigger missingTriggerCriterion = trigger("{}", new Criterion(
-                new TriggerExpression(target("NotAnAttribute")),
-                ComparisonOperator.EQ,
-                new ValueExpression(1)));
-        StatementTrigger missingPreviousCriterion = trigger("{}", new Criterion(
-                new PreviousExpression(target("NotAnAttribute")),
-                ComparisonOperator.EQ,
-                new ValueExpression(1)));
-
-        assertFalse(processor.renderTemplateForValidation(missingTrigger, context).success());
-        assertFalse(processor.renderTemplateForValidation(missingPrevious, context).success());
-        assertFalse(processor.renderTemplateForValidation(missingTriggerCriterion, context).success());
-        assertFalse(processor.renderTemplateForValidation(missingPreviousCriterion, context).success());
-    }
-
-    @Test
-    @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
-    void validatesQueryAndLookupPathsAgainstTheirReferencedObjectClasses() {
+    void rendersQueryAndLookupValuesAndChecksTheirStatementDatatype() {
         TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
         TestInjectionContext context =
                 new TestInjectionContext(StatementTrigger.Type.OBJECT_UPDATE, "BaseEntity.TrackedEntity");
@@ -192,33 +163,14 @@ class ObjectInjectionHandlerTest {
         StatementTrigger wrongQueryDatatype = trigger("""
                 {"result":{"score":{"raw":["query","BaseEntity",["EntityId"],null]}}}
                 """);
-        StatementTrigger missingQueryTarget = trigger("""
-                {"value":["query","BaseEntity",["NotAnAttribute"],null,{"required":false}]}
-                """);
-        StatementTrigger missingQueryCriterion = trigger("""
-                {"value":["query","BaseEntity",["EntityId"],[["NotAnAttribute"],"=",1]]}
-                """);
-        StatementTrigger missingLookupTarget = trigger("""
-                {"value":["lookup","base",["NotAnAttribute"],{"required":false}]}
-                """);
-        missingLookupTarget.lookups = Map.of("base", lookup("BaseEntity", null));
-        StatementTrigger missingLookupCriterion = trigger("{}");
-        missingLookupCriterion.lookups = Map.of("base", lookup("BaseEntity", new Criterion(
-                target("NotAnAttribute"),
-                ComparisonOperator.EQ,
-                new ValueExpression(1))));
 
         assertTrue(processor.renderTemplateForValidation(valid, context).success());
         assertFalse(processor.renderTemplateForValidation(wrongQueryDatatype, context).success());
-        assertFalse(processor.renderTemplateForValidation(missingQueryTarget, context).success());
-        assertFalse(processor.renderTemplateForValidation(missingQueryCriterion, context).success());
-        assertFalse(processor.renderTemplateForValidation(missingLookupTarget, context).success());
-        assertFalse(processor.renderTemplateForValidation(missingLookupCriterion, context).success());
     }
 
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
-    void interactionValidationRemainsTheDefault() {
+    void rendersInteractionTestValues() {
         TriggerProcessor processor = new TriggerProcessor(handler(SIMULATION_FOM));
         StatementTrigger interaction = trigger("""
                 {"result":{"score":{"raw":["trigger",["StepNumber"]]}}}
@@ -229,40 +181,8 @@ class ObjectInjectionHandlerTest {
         TriggerProcessor.TriggerProcessingResult result = processor.renderTemplateForValidation(
                 interaction,
                 new TestInjectionContext("StepCompleted"));
-        StatementTrigger missing = trigger("""
-                {"missing":["trigger",["NotAParameter"],{"required":false}]}
-                """);
-        missing.type = StatementTrigger.Type.INTERACTION;
-        missing.clazz = "StepCompleted";
-
         assertTrue(result.success());
         assertTrue(result.statement().contains("\"raw\":0.5"));
-        assertFalse(processor.renderTemplateForValidation(
-                missing,
-                new TestInjectionContext("StepCompleted")).success());
-    }
-
-    @Test
-    @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
-    void validatesPreviousOnlyForObjectUpdateTemplates() {
-        TriggerProcessor processor = new TriggerProcessor(handler(OBJECT_FOM));
-        for (StatementTrigger.Type type : List.of(
-                StatementTrigger.Type.OBJECT_UPDATE,
-                StatementTrigger.Type.INTERACTION,
-                StatementTrigger.Type.OBJECT_CREATE,
-                StatementTrigger.Type.OBJECT_DELETE)) {
-            StatementTrigger trigger = trigger("""
-                    {"oldCount":["previous",["Count"]]}
-                    """);
-            trigger.type = type;
-
-            TriggerProcessor.TriggerProcessingResult result =
-                    processor.renderTemplateForValidation(
-                            trigger,
-                            new TestInjectionContext(type, "BaseEntity.TrackedEntity"));
-
-            assertEquals(type == StatementTrigger.Type.OBJECT_UPDATE, result.success(), type.toString());
-        }
     }
 
     @Test

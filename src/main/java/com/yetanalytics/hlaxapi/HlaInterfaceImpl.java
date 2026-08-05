@@ -106,6 +106,9 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     private StatementValidator validator;
 
     @Autowired
+    private FomConfigValidator fomConfigValidator;
+
+    @Autowired
     private ObjectCache objectCache;
 
     @Autowired
@@ -203,15 +206,22 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     public void validateConfig() throws XapiConfigurationException {
         for(StatementTrigger st : xapiConfig.statementTriggers){
-            if (st.skipValidation) continue;
+            try {
+                fomConfigValidator.validate(st);
+            } catch (RuntimeException e) {
+                logger.error("Invalid Statement Trigger (Invalid FOM reference): {}", st, e);
+                throw new XapiConfigurationException("Could not validate xAPI Configuration", e);
+            }
             TriggerProcessingResult tpr = triggerProcessor.renderTemplateForValidation(
                     st,
                     new TestInjectionContext(st.type, st.clazz));
             if (tpr.success()) {
-                StatementValidationResult svr = validator.validateStatement(tpr.statement());
-                if (!svr.isValid()){
-                    logger.error("Invalid Statement Trigger (Invalid xAPI): {}. {}", st, svr.getErrors());
-                    throw new XapiConfigurationException("Could not validate xAPI Configuration");
+                if (!st.skipValidation) {
+                    StatementValidationResult svr = validator.validateStatement(tpr.statement());
+                    if (!svr.isValid()){
+                        logger.error("Invalid Statement Trigger (Invalid xAPI): {}. {}", st, svr.getErrors());
+                        throw new XapiConfigurationException("Could not validate xAPI Configuration");
+                    }
                 }
             } else {
                 logger.error("Invalid Statement Trigger (Could not Process): {}. {}", st, tpr.error());

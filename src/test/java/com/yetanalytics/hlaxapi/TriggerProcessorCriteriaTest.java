@@ -165,14 +165,6 @@ class TriggerProcessorCriteriaTest {
             public ValueResolution handleTrigger(Target target, InjectionContext context) {
                 throw new IllegalStateException("cannot decode event value");
             }
-
-            @Override
-            public void validateCriteriaSources(
-                    StatementTrigger trigger,
-                    TestInjectionContext context) {
-                // This test isolates runtime criteria evaluation from structural
-                // FOM validation.
-            }
         };
         StatementTrigger trigger = trigger(
                 new TriggerExpression(target("Broken")),

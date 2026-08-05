@@ -187,9 +187,6 @@ public class TriggerProcessor {
         }
         ObjectMapper mapper = new ObjectMapper();
         try {
-            if (!evaluateCriteria && context instanceof TestInjectionContext testContext) {
-                injectionHandler.validateCriteriaSources(trigger, testContext);
-            }
             LazyLookupContext lookups = new LazyLookupContext(injectionHandler, context, trigger.lookups);
             if (evaluateCriteria
                     && !new TriggerCriteriaMatcher(injectionHandler).matches(trigger.criteria, context, lookups)) {
