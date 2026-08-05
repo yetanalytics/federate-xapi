@@ -15,7 +15,7 @@ import javax.xml.xpath.XPathExpressionException;
 import org.springframework.stereotype.Component;
 
 /**
- * FOM-derived object metadata used by the SQLite cache.
+ * Canonical object metadata derived from the FOM.
  */
 @Component
 public final class FomCatalog {
@@ -29,7 +29,7 @@ public final class FomCatalog {
         for (FOMXML.ObjectClassDefinition definition : fomXml.objectClassDefinitions()) {
             builder.addObjectClass(definition);
         }
-        this.classesByName = builder.classesByName;
+        this.classesByName = Collections.unmodifiableMap(new LinkedHashMap<>(builder.classesByName));
 
         Map<Integer, ObjectClassDef> byId = new LinkedHashMap<>();
         Map<Integer, FomAttribute> attrsById = new LinkedHashMap<>();
@@ -47,8 +47,11 @@ public final class FomCatalog {
         return classesByName.values();
     }
 
+    /**
+     * Resolves an object class by its exact canonical name.
+     */
     public Optional<ObjectClassDef> objectClass(String name) {
-        return Optional.ofNullable(classesByName.get(localName(name)));
+        return Optional.ofNullable(classesByName.get(name));
     }
 
     public Optional<ObjectClassDef> objectClass(int id) {
@@ -137,19 +140,10 @@ public final class FomCatalog {
         return pathKey.replaceAll("\\[[0-9]+\\]", "[]");
     }
 
-    static String localName(String hlaName) {
-        if (hlaName == null) {
-            return null;
-        }
-        String trimmed = hlaName.trim();
-        int index = trimmed.lastIndexOf('.');
-        return index >= 0 ? trimmed.substring(index + 1) : trimmed;
-    }
-
     private boolean isSameOrDescendant(ObjectClassDef candidate, ObjectClassDef requestedClass) {
         ObjectClassDef current = candidate;
         while (current != null) {
-            if (current.localName().equals(requestedClass.localName())) {
+            if (current.hlaName().equals(requestedClass.hlaName())) {
                 return true;
             }
             current = classesByName.get(current.parentName());
@@ -160,7 +154,6 @@ public final class FomCatalog {
     public record ObjectClassDef(
             int id,
             String hlaName,
-            String localName,
             String parentName,
             List<FomAttribute> attributes) {
 
@@ -219,13 +212,6 @@ public final class FomCatalog {
         }
 
         private void addObjectClass(FOMXML.ObjectClassDefinition definition) {
-            String localClassName = localName(definition.name());
-            String localParentName = localName(definition.parentName());
-            ObjectClassDef parentClass = classesByName.get(localParentName);
-            String hlaName = parentClass == null || "HLAobjectRoot".equals(parentClass.localName())
-                    ? localClassName
-                    : parentClass.hlaName() + "." + localClassName;
-
             List<AttributeSource> allAttributes = new ArrayList<>();
             if (definition.parentName() != null) {
                 allAttributes.addAll(attributesByClassName.getOrDefault(definition.parentName(), List.of()));
@@ -244,11 +230,10 @@ public final class FomCatalog {
             ObjectClassDef classDef =
                     new ObjectClassDef(
                             classId,
-                            hlaName,
-                            localClassName,
-                            localParentName,
+                            definition.name(),
+                            definition.parentName(),
                             flattened);
-            classesByName.put(classDef.localName(), classDef);
+            classesByName.put(classDef.hlaName(), classDef);
         }
 
         private void flattenAttribute(

@@ -188,17 +188,17 @@ public class InjectionHandler {
     }
 
     private EventTargetDefinition interactionTargetDefinition(String hlaClass, Target target) {
-        PathCheckResult path = fomXml.checkInteractionParameterPath(hlaClass, target.parts);
-        String topLevelType = null;
-        String topLevelName = FomCatalog.topLevelTargetPart(target.parts);
-        if (topLevelName != null) {
-            try {
-                topLevelType = fomXml.getParameterType(hlaClass, topLevelName, true);
-            } catch (XPathExpressionException e) {
-                logger.warn("Unable to resolve interaction parameter type for {}.{}", hlaClass, topLevelName, e);
-            }
+        if (target == null) {
+            return EventTargetDefinition.missing();
         }
-        return new EventTargetDefinition(path.exists, path.primitiveType, topLevelType);
+        PathCheckResult path = fomXml.checkInteractionParameterPath(hlaClass, target.parts);
+        String topLevelType = fomXml.getInteractionParameterType(
+                hlaClass,
+                FomCatalog.topLevelTargetPart(target.parts));
+        return new EventTargetDefinition(
+                path.exists,
+                path.primitiveType,
+                topLevelType);
     }
 
     private EventTargetDefinition objectTargetDefinition(String hlaClass, Target target) {

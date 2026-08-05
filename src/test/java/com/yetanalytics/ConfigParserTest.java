@@ -148,9 +148,9 @@ public class ConfigParserTest {
         Files.writeString(configPath, """
                 {
                   "statementTriggers": [
-                    {"type":"ObjectCreate","class":"Rabbit","statement":{}},
-                    {"type":"objectUpdate","class":"Rabbit","statement":{}},
-                    {"type":"OBJECTDELETE","class":"Rabbit","statement":{}}
+                    {"type":"ObjectCreate","class":"SimEntity.Rabbit","statement":{}},
+                    {"type":"objectUpdate","class":"SimEntity.Rabbit","statement":{}},
+                    {"type":"OBJECTDELETE","class":"SimEntity.Rabbit","statement":{}}
                   ]
                 }
                 """);
@@ -201,7 +201,7 @@ public class ConfigParserTest {
                 {
                   "statementTriggers": [{
                     "type": "ObjectUpdate",
-                    "class": "Rabbit",
+                    "class": "SimEntity.Rabbit",
                     "criteria": [["previous", ["Hunger"]], "<", ["trigger", ["Hunger"]]],
                     "statement": {}
                   }]
@@ -260,7 +260,7 @@ public class ConfigParserTest {
                 {
                     "objectCache": {
                         "trackedObjects": [
-                            {"class": "Rabbit", "attributes": ["EntityId", "Hunger"]},
+                            {"class": "SimEntity.Rabbit", "attributes": ["EntityId", "Hunger"]},
                             {"class": "World", "allAttributes": true},
                             {"class": "*", "allAttributes": true}
                         ]
@@ -273,7 +273,7 @@ public class ConfigParserTest {
         assertNotNull(config.objectCacheConfig);
         assertNotNull(config.objectCacheConfig.trackedObjects);
         assertEquals(3, config.objectCacheConfig.trackedObjects.size());
-        assertEquals("Rabbit", config.objectCacheConfig.trackedObjects.get(0).clazz);
+        assertEquals("SimEntity.Rabbit", config.objectCacheConfig.trackedObjects.get(0).clazz);
         assertEquals(List.of("EntityId", "Hunger"), config.objectCacheConfig.trackedObjects.get(0).attributes);
         assertTrue(config.objectCacheConfig.trackedObjects.get(1).allAttributes);
         assertEquals("*", config.objectCacheConfig.trackedObjects.get(2).clazz);

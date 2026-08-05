@@ -24,13 +24,13 @@ class TriggerProcessorDispatchTest {
     @Test
     @SuppressTestLogging({"com.yetanalytics.hlaxapi.TriggerProcessor"})
     void matchesExactlyStagesOnceAndIsolatesProcessingAndEnqueueFailures() {
-        StatementTrigger first = trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "first");
-        StatementTrigger wrongType = trigger(StatementTrigger.Type.INTERACTION, "Rabbit", "wrong-type");
-        StatementTrigger wrongClass = trigger(StatementTrigger.Type.OBJECT_UPDATE, "Wolf", "wrong-class");
-        StatementTrigger skipped = trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "skip");
-        StatementTrigger failed = trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "fail");
-        StatementTrigger throwsException = trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "throw");
-        StatementTrigger second = trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "second");
+        StatementTrigger first = trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "first");
+        StatementTrigger wrongType = trigger(StatementTrigger.Type.INTERACTION, "SimEntity.Rabbit", "wrong-type");
+        StatementTrigger wrongClass = trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Wolf", "wrong-class");
+        StatementTrigger skipped = trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "skip");
+        StatementTrigger failed = trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "fail");
+        StatementTrigger throwsException = trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "throw");
+        StatementTrigger second = trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "second");
         XapiConfig config = new XapiConfig();
         config.statementTriggers =
                 List.of(first, wrongType, wrongClass, skipped, failed, throwsException, second);
@@ -38,8 +38,8 @@ class TriggerProcessorDispatchTest {
 
         List<TriggerProcessor.StagedStatement> staged = processor.stage(
                 StatementTrigger.Type.OBJECT_UPDATE,
-                "Rabbit",
-                new ObjectInjectionContext("Rabbit", "object-1", Map.of()));
+                "SimEntity.Rabbit",
+                new ObjectInjectionContext("SimEntity.Rabbit", "object-1", Map.of()));
 
         assertEquals(List.of("first", "second"),
                 staged.stream().map(TriggerProcessor.StagedStatement::statement).toList());
@@ -60,16 +60,16 @@ class TriggerProcessorDispatchTest {
     void interactionEventsUseTheSameProcessorWithoutMatchingObjectTriggers() {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
-                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "object"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "object"),
                 trigger(StatementTrigger.Type.INTERACTION, "SimEntity", "ancestor-interaction"),
-                trigger(StatementTrigger.Type.INTERACTION, "Rabbit", "interaction"));
+                trigger(StatementTrigger.Type.INTERACTION, "SimEntity.Rabbit", "interaction"));
         TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
         List<String> enqueued = new ArrayList<>();
 
         processor.dispatch(
                 StatementTrigger.Type.INTERACTION,
-                "Rabbit",
-                new InteractionInjectionContext("Rabbit", Map.of()),
+                "SimEntity.Rabbit",
+                new InteractionInjectionContext("SimEntity.Rabbit", Map.of()),
                 enqueued::add);
 
         assertEquals(List.of("interaction"), enqueued);
@@ -80,22 +80,22 @@ class TriggerProcessorDispatchTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
                 trigger(StatementTrigger.Type.OBJECT_CREATE, "SimEntity", "sim-entity-create"),
-                trigger(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", "rabbit-create"),
-                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "rabbit-update"),
+                trigger(StatementTrigger.Type.OBJECT_CREATE, "SimEntity.Rabbit", "rabbit-create"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "rabbit-update"),
                 trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity", "sim-entity-delete"),
-                trigger(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", "rabbit-delete"),
-                trigger(StatementTrigger.Type.OBJECT_DELETE, "Wolf", "wolf-delete"));
+                trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Rabbit", "rabbit-delete"),
+                trigger(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Wolf", "wolf-delete"));
         TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
         ObjectInjectionContext rabbit =
-                new ObjectInjectionContext("Rabbit", "object-1", Map.of());
+                new ObjectInjectionContext("SimEntity.Rabbit", "object-1", Map.of());
 
         List<String> createStatements = processor
-                .stage(StatementTrigger.Type.OBJECT_CREATE, "Rabbit", rabbit)
+                .stage(StatementTrigger.Type.OBJECT_CREATE, "SimEntity.Rabbit", rabbit)
                 .stream()
                 .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
         List<String> deleteStatements = processor
-                .stage(StatementTrigger.Type.OBJECT_DELETE, "Rabbit", rabbit)
+                .stage(StatementTrigger.Type.OBJECT_DELETE, "SimEntity.Rabbit", rabbit)
                 .stream()
                 .map(TriggerProcessor.StagedStatement::statement)
                 .toList();
@@ -113,15 +113,15 @@ class TriggerProcessorDispatchTest {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity", "sim-entity-update"),
-                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", "rabbit-update"),
-                trigger(StatementTrigger.Type.OBJECT_UPDATE, "Wolf", "wolf-update"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", "rabbit-update"),
+                trigger(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Wolf", "wolf-update"),
                 trigger(StatementTrigger.Type.OBJECT_UPDATE, "MissingObject", "unknown-update"));
         TriggerProcessor processor = new ControlledTriggerProcessor(config, catalog);
         ObjectInjectionContext rabbit =
-                new ObjectInjectionContext("Rabbit", "object-1", Map.of());
+                new ObjectInjectionContext("SimEntity.Rabbit", "object-1", Map.of());
 
         List<String> updateStatements = processor
-                .stage(StatementTrigger.Type.OBJECT_UPDATE, "Rabbit", rabbit)
+                .stage(StatementTrigger.Type.OBJECT_UPDATE, "SimEntity.Rabbit", rabbit)
                 .stream()
                 .map(TriggerProcessor.StagedStatement::statement)
                 .toList();

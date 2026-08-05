@@ -67,11 +67,11 @@ final class ObjectSubscriptionPlan {
         LinkedHashSet<String> attributes = new LinkedHashSet<>();
         FomCatalog.ObjectClassDef current = catalog.objectClass(className).orElse(null);
         if (current == null) {
-            addAttributes(attributes, subscriptions.get(FomCatalog.localName(className)));
+            addAttributes(attributes, subscriptions.get(className));
             return Set.copyOf(attributes);
         }
         while (current != null) {
-            addAttributes(attributes, subscriptions.get(current.localName()));
+            addAttributes(attributes, subscriptions.get(current.hlaName()));
             current = catalog.objectClass(current.parentName()).orElse(null);
         }
         return Set.copyOf(attributes);
@@ -153,12 +153,12 @@ final class ObjectSubscriptionPlan {
                     || trackedObject.clazz.isBlank()) {
                 continue;
             }
-            if ("*".equals(trackedObject.clazz.trim())) {
+            if ("*".equals(trackedObject.clazz)) {
                 if (trackedObject.allAttributes) {
                     catalog.objectClasses().forEach(clazz ->
                             addAttributes(
                                     merged,
-                                    clazz.localName(),
+                                    clazz.hlaName(),
                                     clazz.topLevelAttributeNames()));
                 }
                 continue;
@@ -190,7 +190,7 @@ final class ObjectSubscriptionPlan {
             return;
         }
         classes.forEach(clazz ->
-                addAttributes(subscriptions, clazz.localName(), attributes));
+                addAttributes(subscriptions, clazz.hlaName(), attributes));
     }
 
     private static void addAllAttributesForClassAndDescendants(
@@ -208,7 +208,7 @@ final class ObjectSubscriptionPlan {
         classes.forEach(clazz ->
                 addAttributes(
                         subscriptions,
-                        clazz.localName(),
+                        clazz.hlaName(),
                         clazz.topLevelAttributeNames()));
     }
 

@@ -31,7 +31,7 @@ final class SqliteObjectCachePersistenceTest extends ObjectCachePersistenceTest 
     @Test
     void configuresSqliteSchemaVersionAndForeignKeys() throws SQLException {
         try (ObjectCache cache = newCache()) {
-            assertEquals(1, scalarLong(cache, "PRAGMA user_version"));
+            assertEquals(2, scalarLong(cache, "PRAGMA user_version"));
             assertEquals(1, scalarLong(cache, "PRAGMA foreign_keys"));
         }
     }
