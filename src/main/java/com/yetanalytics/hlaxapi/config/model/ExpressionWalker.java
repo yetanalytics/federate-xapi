@@ -113,6 +113,7 @@ public final class ExpressionWalker {
             }
             case QueryExpression query -> List.of(new Child(query.criteria, ChildRole.QUERY_FILTER, -1));
             case LookupExpression ignored -> List.of();
+            case PreviousExpression ignored -> List.of();
             case Target ignored -> List.of();
             case TriggerExpression ignored -> List.of();
             case ValueExpression ignored -> List.of();
@@ -125,6 +126,7 @@ public final class ExpressionWalker {
             case LogicalExpression logical -> new LogicalExpression(logical.operator, List.copyOf(children));
             case QueryExpression query -> new QueryExpression(query.clazz, query.target, children.get(0));
             case LookupExpression lookup -> lookup;
+            case PreviousExpression previous -> previous;
             case Target target -> target;
             case TriggerExpression trigger -> trigger;
             case ValueExpression value -> value;

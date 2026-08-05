@@ -10,6 +10,7 @@ import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
 import com.yetanalytics.hlaxapi.config.model.LogicalOperator;
 import com.yetanalytics.hlaxapi.config.model.LookupExpression;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.QueryExpression;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
@@ -24,27 +25,27 @@ class QueryReferenceCollectorTest {
     @Test
     void findsWholeNodeAndInlineQueryInjections() {
         StatementTrigger wholeNode = trigger("""
-                {"actor":{"name":["query","Rabbit",["EntityId"],[["Hunger"],">",50]]}}
+                {"actor":{"name":["query","SimEntity.Rabbit",["EntityId"],[["Hunger"],">",50]]}}
                 """);
         StatementTrigger inline = trigger("""
-                {"result":{"response":"at=<<[\\"query\\",\\"Rabbit\\",[\\"Position\\",\\"Y\\"],[[\\"Position\\",\\"X\\"],\\"<\\",15]]>>"}}
+                {"result":{"response":"at=<<[\\"query\\",\\"SimEntity.Rabbit\\",[\\"Position\\",\\"Y\\"],[[\\"Position\\",\\"X\\"],\\"<\\",15]]>>"}}
                 """);
 
         Map<String, Set<String>> references = QueryReferenceCollector.collect(List.of(wholeNode, inline));
 
-        assertEquals(Set.of("EntityId", "Hunger", "Position"), references.get("Rabbit"));
+        assertEquals(Set.of("EntityId", "Hunger", "Position"), references.get("SimEntity.Rabbit"));
     }
 
     @Test
     void ignoresTriggerExpressionTargetsInsideQueryCriteria() {
         StatementTrigger trigger = trigger("""
-                {"actor":{"name":["query","Rabbit",["EntityId"],[["Hunger"],">",["trigger",["DesiredHunger"]]]]}}
+                {"actor":{"name":["query","SimEntity.Rabbit",["EntityId"],[["Hunger"],">",["trigger",["DesiredHunger"]]]]}}
                 """);
 
         Map<String, Set<String>> references = QueryReferenceCollector.collect(List.of(trigger));
 
-        assertEquals(Set.of("EntityId", "Hunger"), references.get("Rabbit"));
-        assertFalse(references.get("Rabbit").contains("DesiredHunger"));
+        assertEquals(Set.of("EntityId", "Hunger"), references.get("SimEntity.Rabbit"));
+        assertFalse(references.get("SimEntity.Rabbit").contains("DesiredHunger"));
     }
 
     @Test
@@ -104,6 +105,33 @@ class QueryReferenceCollectorTest {
         assertEquals(Set.of("EntityId", "Hunger"), references.get("SimEntity"));
         assertEquals(Set.of("WorldId", "Size"), references.get("World"));
         assertFalse(references.get("World").contains("DesiredWorldId"));
+    }
+
+    @Test
+    void findsObjectUpdatePreviousReferencesOnly() {
+        StatementTrigger update = trigger("""
+                {
+                  "oldX":["previous",["Position","X"]],
+                  "description":"old hunger <<[\\"previous\\",[\\"Hunger\\"]]>>"
+                }
+                """);
+        update.type = StatementTrigger.Type.OBJECT_UPDATE;
+        update.clazz = "SimEntity.Rabbit";
+        update.criteria = new Criterion(
+                new PreviousExpression(new Target(List.of("EntityId"))),
+                ComparisonOperator.NEQ,
+                new TriggerExpression(new Target(List.of("EntityId"))));
+        StatementTrigger create = trigger("""
+                {"invalid":["previous",["Hunger"]]}
+                """);
+        create.type = StatementTrigger.Type.OBJECT_CREATE;
+        create.clazz = "SimEntity.Wolf";
+
+        Map<String, Set<String>> references =
+                QueryReferenceCollector.collect(List.of(update, create));
+
+        assertEquals(Set.of("EntityId", "Position", "Hunger"), references.get("SimEntity.Rabbit"));
+        assertFalse(references.containsKey("SimEntity.Wolf"));
     }
 
     private StatementTrigger trigger(String statement) {

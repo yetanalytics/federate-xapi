@@ -21,13 +21,19 @@ public class StatementTrigger {
 
     public enum Type {
 
-        INTERACTION, OBJECT_UPDATE;
+        INTERACTION, OBJECT_CREATE, OBJECT_UPDATE, OBJECT_DELETE;
+
+        public boolean isObjectEvent() {
+            return this == OBJECT_CREATE || this == OBJECT_UPDATE || this == OBJECT_DELETE;
+        }
 
         public static Type fromString(String s) {
             if (s == null) return null;
             switch (s.trim().toLowerCase()) {
                 case "interaction": return INTERACTION;
+                case "objectcreate": return OBJECT_CREATE;
                 case "objectupdate": return OBJECT_UPDATE;
+                case "objectdelete": return OBJECT_DELETE;
                 default: return null;
             }
         }

@@ -6,10 +6,12 @@ import com.yetanalytics.hlaxapi.config.model.ExpressionWalker;
 import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
 import com.yetanalytics.hlaxapi.config.model.LookupExpression;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.QueryExpression;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import java.util.Map;
 
 /** Enforces the value sources permitted by each criteria evaluation context. */
@@ -23,6 +25,7 @@ public final class CriteriaExpressionValidator {
     private record ValidationState(
             Context context,
             Map<String, ObjectLookup> lookupDefinitions,
+            StatementTrigger.Type triggerType,
             String location) {
     }
 
@@ -36,6 +39,7 @@ public final class CriteriaExpressionValidator {
                         case LogicalExpression ignored -> {
                         }
                         case LookupExpression lookup -> validateLookup(lookup, state);
+                        case PreviousExpression previous -> validatePrevious(previous, state);
                         case QueryExpression query -> validateQuery(query, state);
                         case Target target -> validateTarget(target, state);
                         case TriggerExpression ignored -> {
@@ -59,7 +63,11 @@ public final class CriteriaExpressionValidator {
                         case OPERAND -> state.location + "[" + child.index() + "]";
                         case QUERY_FILTER -> state.location + ".queryFilter";
                     };
-                    return new ValidationState(childContext, state.lookupDefinitions, childLocation);
+                    return new ValidationState(
+                            childContext,
+                            state.lookupDefinitions,
+                            state.triggerType,
+                            childLocation);
                 }
             };
 
@@ -67,17 +75,24 @@ public final class CriteriaExpressionValidator {
     }
 
     public static void validateTrigger(Expression criteria, Map<String, ObjectLookup> lookupDefinitions) {
+        validateTrigger(criteria, lookupDefinitions, StatementTrigger.Type.INTERACTION);
+    }
+
+    public static void validateTrigger(
+            Expression criteria,
+            Map<String, ObjectLookup> lookupDefinitions,
+            StatementTrigger.Type triggerType) {
         Map<String, ObjectLookup> definitions = lookupDefinitions == null ? Map.of() : lookupDefinitions;
         ExpressionWalker.walk(
                 criteria,
-                new ValidationState(Context.TRIGGER, definitions, "criteria"),
+                new ValidationState(Context.TRIGGER, definitions, triggerType, "criteria"),
                 VALIDATION_VISITOR);
     }
 
     public static void validateCacheFilter(Expression criteria) {
         ExpressionWalker.walk(
                 criteria,
-                new ValidationState(Context.CACHE_FILTER, Map.of(), "criteria"),
+                new ValidationState(Context.CACHE_FILTER, Map.of(), null, "criteria"),
                 VALIDATION_VISITOR);
     }
 
@@ -92,6 +107,13 @@ public final class CriteriaExpressionValidator {
     private static void validateQuery(QueryExpression query, ValidationState state) {
         if (state.context != Context.TRIGGER) {
             throw unsupported(query, state);
+        }
+    }
+
+    private static void validatePrevious(PreviousExpression previous, ValidationState state) {
+        if (state.context != Context.TRIGGER
+                || state.triggerType != StatementTrigger.Type.OBJECT_UPDATE) {
+            throw unsupported(previous, state);
         }
     }
 

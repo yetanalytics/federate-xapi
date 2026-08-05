@@ -36,8 +36,7 @@ final class SqliteObjectCacheQueries implements ObjectCacheQueries {
                 """
                 CREATE TABLE fom_object_class (
                     id INTEGER PRIMARY KEY,
-                    hla_name TEXT NOT NULL,
-                    local_name TEXT NOT NULL UNIQUE,
+                    hla_name TEXT NOT NULL UNIQUE,
                     parent_name TEXT
                 )
                 """,
@@ -76,7 +75,7 @@ final class SqliteObjectCacheQueries implements ObjectCacheQueries {
                     PRIMARY KEY(instance_id, attribute_id)
                 )
                 """,
-                "PRAGMA user_version = 1");
+                "PRAGMA user_version = 2");
     }
 
     @Override
@@ -87,8 +86,8 @@ final class SqliteObjectCacheQueries implements ObjectCacheQueries {
     @Override
     public String insertClass() {
         return """
-                INSERT OR IGNORE INTO fom_object_class (id, hla_name, local_name, parent_name)
-                VALUES (?, ?, ?, ?)
+                INSERT OR IGNORE INTO fom_object_class (id, hla_name, parent_name)
+                VALUES (?, ?, ?)
                 """;
     }
 
@@ -124,6 +123,26 @@ final class SqliteObjectCacheQueries implements ObjectCacheQueries {
     }
 
     @Override
+    public String loadCurrentObjectSnapshot() {
+        return """
+                SELECT i.object_handle, i.object_name, c.hla_name, a.attribute_name, v.raw_bytes
+                FROM object_instance i
+                JOIN fom_object_class c ON c.id = i.class_id
+                LEFT JOIN object_attribute_current v
+                    ON v.instance_id = i.id
+                    AND v.attribute_id IN (
+                        SELECT top_level.id
+                        FROM fom_attribute top_level
+                        WHERE top_level.class_id = i.class_id
+                            AND top_level.path_key = top_level.attribute_name
+                    )
+                LEFT JOIN fom_attribute a ON a.id = v.attribute_id
+                WHERE i.object_handle = ? AND i.removed_at IS NULL
+                ORDER BY a.id
+                """;
+    }
+
+    @Override
     public String removeObject() {
         return "UPDATE object_instance SET removed_at = ? WHERE object_handle = ?";
     }
@@ -142,17 +161,19 @@ final class SqliteObjectCacheQueries implements ObjectCacheQueries {
 
     @Override
     public String findObjectId() {
-        return "SELECT id FROM object_instance WHERE object_handle = ?";
+        return "SELECT id FROM object_instance WHERE object_handle = ? AND removed_at IS NULL";
     }
 
     @Override
-    public String listCurrentObjects() {
+    public String listCurrentObjects(int classCount) {
+        String placeholders = String.join(", ", java.util.Collections.nCopies(classCount, "?"));
         return """
-                SELECT id, object_handle, object_name
-                FROM object_instance
-                WHERE class_id = ? AND removed_at IS NULL
-                ORDER BY id
-                """;
+                SELECT i.id, i.object_handle, i.object_name, c.hla_name
+                FROM object_instance i
+                JOIN fom_object_class c ON c.id = i.class_id
+                WHERE i.class_id IN (%s) AND i.removed_at IS NULL
+                ORDER BY i.id
+                """.formatted(placeholders);
     }
 
     @Override

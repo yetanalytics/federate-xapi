@@ -9,13 +9,15 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 
 final class JdbcObjectCacheStore implements ObjectCacheStore {
 
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
 
     private final ObjectCacheQueries queries;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -43,9 +45,37 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
             statement.setInt(3, clazz.id());
             statement.setString(4, java.time.Instant.now().toString());
             statement.executeUpdate();
-            return loadObject(objectHandle, clazz.localName());
+            return loadObject(objectHandle, clazz.hlaName());
         } catch (SQLException e) {
             throw new IllegalStateException("Could not upsert object instance " + objectHandle, e);
+        }
+    }
+
+    @Override
+    public Optional<ObjectSnapshot> findCurrentObjectSnapshot(String objectHandle) {
+        try (PreparedStatement statement = connection.prepareStatement(queries.loadCurrentObjectSnapshot())) {
+            statement.setString(1, objectHandle);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                String objectName = null;
+                String className = null;
+                Map<String, byte[]> attributes = new LinkedHashMap<>();
+                boolean found = false;
+                while (resultSet.next()) {
+                    found = true;
+                    objectName = resultSet.getString("object_name");
+                    className = resultSet.getString("hla_name");
+                    String attributeName = resultSet.getString("attribute_name");
+                    byte[] rawBytes = resultSet.getBytes("raw_bytes");
+                    if (attributeName != null && rawBytes != null) {
+                        attributes.put(attributeName, rawBytes);
+                    }
+                }
+                return found
+                        ? Optional.of(new ObjectSnapshot(objectHandle, objectName, className, attributes))
+                        : Optional.empty();
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not load current object snapshot: " + objectHandle, e);
         }
     }
 
@@ -95,54 +125,64 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
     }
 
     @Override
-    public List<CachedObject> currentObjects(FomCatalog.ObjectClassDef clazz) {
+    public List<CachedObject> currentObjects(List<FomCatalog.ObjectClassDef> classes) {
+        if (classes == null || classes.isEmpty()) {
+            return List.of();
+        }
         List<CachedObject> objects = new ArrayList<>();
-        try (PreparedStatement statement = connection.prepareStatement(queries.listCurrentObjects())) {
-            statement.setInt(1, clazz.id());
+        try (PreparedStatement statement =
+                connection.prepareStatement(queries.listCurrentObjects(classes.size()))) {
+            for (int i = 0; i < classes.size(); i++) {
+                statement.setInt(i + 1, classes.get(i).id());
+            }
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     objects.add(new CachedObject(
                             resultSet.getLong("id"),
                             resultSet.getString("object_handle"),
                             resultSet.getString("object_name"),
-                            clazz.localName()));
+                            resultSet.getString("hla_name")));
                 }
             }
         } catch (SQLException e) {
-            throw new IllegalStateException(
-                    "Could not list cached objects for class " + clazz.localName(), e);
+            throw new IllegalStateException("Could not list current cached objects", e);
         }
         return objects;
     }
 
     @Override
     public void replaceCurrentValues(
-            long instanceId,
+            String objectHandle,
             FomCatalog.ObjectClassDef clazz,
-            String attributeName,
-            List<DecodedAttributeValue> values,
+            List<ReflectedAttributeValues> attributes,
             String observedAt,
             long observedSequence) {
+        if (attributes == null || attributes.isEmpty()) {
+            return;
+        }
         boolean autoCommit = currentAutoCommit();
         try {
             connection.setAutoCommit(false);
-            deleteCurrentValues(instanceId, clazz.id(), attributeName);
-            for (DecodedAttributeValue value : values) {
-                Optional<Integer> attributeId = attributeIdForPath(clazz, value.pathKey());
-                if (attributeId.isPresent()) {
-                    upsertCurrentValue(
-                            instanceId,
-                            attributeId.orElseThrow(),
-                            value,
-                            observedAt,
-                            observedSequence);
+            CachedObject object = ensureObject(objectHandle, null, clazz);
+            for (ReflectedAttributeValues attribute : attributes) {
+                deleteCurrentValues(object.id(), clazz.id(), attribute.attributeName());
+                for (DecodedAttributeValue value : attribute.values()) {
+                    Optional<Integer> attributeId = attributeIdForPath(clazz, value.pathKey());
+                    if (attributeId.isPresent()) {
+                        upsertCurrentValue(
+                                object.id(),
+                                attributeId.orElseThrow(),
+                                value,
+                                observedAt,
+                                observedSequence);
+                    }
                 }
             }
             connection.commit();
         } catch (SQLException | RuntimeException e) {
             rollbackAfterReplacementFailure(e);
             throw new IllegalStateException(
-                    "Could not replace current object attribute " + attributeName, e);
+                    "Could not replace reflected object attributes", e);
         } finally {
             restoreAutoCommit(autoCommit);
         }
@@ -208,8 +248,7 @@ final class JdbcObjectCacheStore implements ObjectCacheStore {
             for (FomCatalog.ObjectClassDef clazz : catalog.objectClasses()) {
                 statement.setInt(1, clazz.id());
                 statement.setString(2, clazz.hlaName());
-                statement.setString(3, clazz.localName());
-                statement.setString(4, clazz.parentName());
+                statement.setString(3, clazz.parentName());
                 statement.addBatch();
             }
             statement.executeBatch();

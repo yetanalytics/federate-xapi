@@ -143,6 +143,32 @@ public class ConfigParserTest {
     }
 
     @Test
+    public void parsesObjectLifecycleTriggerTypes(@TempDir Path tempDir) throws IOException {
+        Path configPath = tempDir.resolve("object-lifecycle-config.json");
+        Files.writeString(configPath, """
+                {
+                  "statementTriggers": [
+                    {"type":"ObjectCreate","class":"SimEntity.Rabbit","statement":{}},
+                    {"type":"objectUpdate","class":"SimEntity.Rabbit","statement":{}},
+                    {"type":"OBJECTDELETE","class":"SimEntity.Rabbit","statement":{}}
+                  ]
+                }
+                """);
+
+        List<StatementTrigger.Type> types = ConfigParser.fromFile(configPath.toString()).parse()
+                .statementTriggers.stream()
+                .map(trigger -> trigger.type)
+                .toList();
+
+        assertEquals(
+                List.of(
+                        StatementTrigger.Type.OBJECT_CREATE,
+                        StatementTrigger.Type.OBJECT_UPDATE,
+                        StatementTrigger.Type.OBJECT_DELETE),
+                types);
+    }
+
+    @Test
     public void parsesQueriesAndLookupsInTriggerCriteria(@TempDir Path tempDir) throws IOException {
         Path configPath = tempDir.resolve("xapi-config.json");
         Files.writeString(configPath, """
@@ -166,6 +192,43 @@ public class ConfigParserTest {
 
         assertTrue(criteria.left instanceof QueryExpression);
         assertTrue(criteria.right instanceof LookupExpression);
+    }
+
+    @Test
+    public void parsesPreviousCriteriaOnlyForObjectUpdate(@TempDir Path tempDir) throws IOException {
+        Path validPath = tempDir.resolve("valid-previous.json");
+        Files.writeString(validPath, """
+                {
+                  "statementTriggers": [{
+                    "type": "ObjectUpdate",
+                    "class": "SimEntity.Rabbit",
+                    "criteria": [["previous", ["Hunger"]], "<", ["trigger", ["Hunger"]]],
+                    "statement": {}
+                  }]
+                }
+                """);
+
+        assertNotNull(ConfigParser.fromFile(validPath.toString()).parse()
+                .statementTriggers.get(0).criteria);
+
+        for (String type : List.of("Interaction", "ObjectCreate", "ObjectDelete")) {
+            Path invalidPath = tempDir.resolve(type + "-previous.json");
+            Files.writeString(invalidPath, """
+                    {
+                      "statementTriggers": [{
+                        "type": "%s",
+                        "class": "Rabbit",
+                        "criteria": [["previous", ["Hunger"]], "<", 10],
+                        "statement": {}
+                      }]
+                    }
+                    """.formatted(type));
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> ConfigParser.fromFile(invalidPath.toString()).parse(),
+                    type);
+        }
     }
 
     @Test
@@ -197,7 +260,7 @@ public class ConfigParserTest {
                 {
                     "objectCache": {
                         "trackedObjects": [
-                            {"class": "Rabbit", "attributes": ["EntityId", "Hunger"]},
+                            {"class": "SimEntity.Rabbit", "attributes": ["EntityId", "Hunger"]},
                             {"class": "World", "allAttributes": true},
                             {"class": "*", "allAttributes": true}
                         ]
@@ -210,7 +273,7 @@ public class ConfigParserTest {
         assertNotNull(config.objectCacheConfig);
         assertNotNull(config.objectCacheConfig.trackedObjects);
         assertEquals(3, config.objectCacheConfig.trackedObjects.size());
-        assertEquals("Rabbit", config.objectCacheConfig.trackedObjects.get(0).clazz);
+        assertEquals("SimEntity.Rabbit", config.objectCacheConfig.trackedObjects.get(0).clazz);
         assertEquals(List.of("EntityId", "Hunger"), config.objectCacheConfig.trackedObjects.get(0).attributes);
         assertTrue(config.objectCacheConfig.trackedObjects.get(1).allAttributes);
         assertEquals("*", config.objectCacheConfig.trackedObjects.get(2).clazz);
@@ -336,6 +399,7 @@ public class ConfigParserTest {
         String stmt = "{\"actor\":{\"name\":\"predator-<<[\\\"trigger\\\", [\\\"EntityId\\\"]]>>-prey\"}}";
 
         com.yetanalytics.hlaxapi.config.model.StatementTrigger st = new com.yetanalytics.hlaxapi.config.model.StatementTrigger();
+        st.type = StatementTrigger.Type.INTERACTION;
         st.statement = stmt;
 
         String out = triggerProcessor.processTrigger(st, injectionContext).statement();
@@ -362,6 +426,7 @@ public class ConfigParserTest {
 
         String stmt = "{\"actor\":{\"name\":\"from=<<[\\\"trigger\\\", [\\\"EntityId\\\"]]>>, to=<<[\\\"trigger\\\", [\\\"EntityId\\\"]]>>\"}}";
         com.yetanalytics.hlaxapi.config.model.StatementTrigger st = new com.yetanalytics.hlaxapi.config.model.StatementTrigger();
+        st.type = StatementTrigger.Type.INTERACTION;
         st.statement = stmt;
 
         String out = triggerProcessor.processTrigger(st, injectionContext).statement();
@@ -383,6 +448,7 @@ public class ConfigParserTest {
 
         String stmt = "{\"actor\":{\"name\":\"<<[\\\"trigger\\\", [\\\"Description\\\"]]>>\"}}";
         com.yetanalytics.hlaxapi.config.model.StatementTrigger st = new com.yetanalytics.hlaxapi.config.model.StatementTrigger();
+        st.type = StatementTrigger.Type.INTERACTION;
         st.statement = stmt;
 
         String out = triggerProcessor.processTrigger(st, injectionContext).statement();
@@ -401,6 +467,7 @@ public class ConfigParserTest {
             }
         };
         StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.INTERACTION;
         trigger.statement = """
                 {
                   "actor": {"name": ["trigger", ["Name"]]},
@@ -446,6 +513,7 @@ public class ConfigParserTest {
 
         TriggerProcessor triggerProcessor = new TriggerProcessor(ih);
         StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.INTERACTION;
         ObjectLookup lookup = new ObjectLookup();
         lookup.clazz = "SimEntity";
         lookup.criteria = new Criterion(
@@ -635,6 +703,7 @@ public class ConfigParserTest {
 
     private StatementTrigger statementTrigger(String statement) {
         StatementTrigger trigger = new StatementTrigger();
+        trigger.type = StatementTrigger.Type.INTERACTION;
         trigger.statement = statement;
         return trigger;
     }

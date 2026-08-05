@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<objectModel>
+    <objects>
+        <objectClass>
+            <name>HLAobjectRoot</name>
+            <objectClass>
+                <name>BaseEntity</name>
+                <attribute>
+                    <name>EntityId</name>
+                    <dataType>HLAASCIIstring</dataType>
+                </attribute>
+                <attribute>
+                    <name>Position</name>
+                    <dataType>GridPosition</dataType>
+                </attribute>
+                <objectClass>
+                    <name>TrackedEntity</name>
+                    <attribute>
+                        <name>Count</name>
+                        <dataType>HLAinteger32BE</dataType>
+                    </attribute>
+                    <attribute>
+                        <name>PositionHistory</name>
+                        <dataType>GridPositionHistory</dataType>
+                    </attribute>
+                </objectClass>
+            </objectClass>
+        </objectClass>
+    </objects>
+
+    <interactions/>
+
+    <dataTypes>
+        <basicDataRepresentations>
+            <basicData>
+                <name>HLAinteger32BE</name>
+            </basicData>
+        </basicDataRepresentations>
+        <arrayDataTypes>
+            <arrayData>
+                <name>GridPositionHistory</name>
+                <dataType>GridPosition</dataType>
+                <cardinality>Dynamic</cardinality>
+                <encoding>HLAvariableArray</encoding>
+            </arrayData>
+        </arrayDataTypes>
+        <fixedRecordDataTypes>
+            <fixedRecordData>
+                <name>GridPosition</name>
+                <encoding>HLAfixedRecord</encoding>
+                <field>
+                    <name>X</name>
+                    <dataType>HLAinteger32BE</dataType>
+                </field>
+                <field>
+                    <name>Y</name>
+                    <dataType>HLAinteger32BE</dataType>
+                </field>
+            </fixedRecordData>
+        </fixedRecordDataTypes>
+    </dataTypes>
+</objectModel>

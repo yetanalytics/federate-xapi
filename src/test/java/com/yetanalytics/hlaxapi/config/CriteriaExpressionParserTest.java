@@ -12,10 +12,12 @@ import com.yetanalytics.hlaxapi.config.model.Expression;
 import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
 import com.yetanalytics.hlaxapi.config.model.LookupExpression;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.PreviousExpression;
 import com.yetanalytics.hlaxapi.config.model.QueryExpression;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -83,6 +85,30 @@ class CriteriaExpressionParserTest {
 
         ValueExpression right = assertInstanceOf(ValueExpression.class, criterion.right);
         assertTrue(right.value == null);
+    }
+
+    @Test
+    void previousCriteriaAreObjectUpdateOnly() throws Exception {
+        Criterion criterion = assertInstanceOf(
+                Criterion.class,
+                CriteriaExpressionParser.parse(MAPPER.readTree("""
+                        [["previous", ["Hunger"]], "<", ["trigger", ["Hunger"]]]
+                        """)));
+
+        assertInstanceOf(PreviousExpression.class, criterion.left);
+        assertInstanceOf(TriggerExpression.class, criterion.right);
+        assertDoesNotThrow(() -> CriteriaExpressionValidator.validateTrigger(
+                criterion,
+                Map.of(),
+                StatementTrigger.Type.OBJECT_UPDATE));
+        for (StatementTrigger.Type type : List.of(
+                StatementTrigger.Type.INTERACTION,
+                StatementTrigger.Type.OBJECT_CREATE,
+                StatementTrigger.Type.OBJECT_DELETE)) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> CriteriaExpressionValidator.validateTrigger(criterion, Map.of(), type));
+        }
     }
 
     @Test

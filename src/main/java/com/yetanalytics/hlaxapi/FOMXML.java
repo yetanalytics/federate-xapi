@@ -96,7 +96,7 @@ public class FOMXML {
 
     public PathCheckResult checkInteractionParameterPath(String interactionName, List<Object> pathParts){
         try {
-            return checkParameterPath(interactionName, true, pathParts);
+            return checkInteractionParameterPathInternal(interactionName, pathParts);
         } catch (XPathExpressionException e) {
             logger.error("Error checking interaction parameter path", e);
             return new PathCheckResult(false, null, null);
@@ -107,25 +107,6 @@ public class FOMXML {
         return checkInteractionParameterPath(interactionName, List.of(param));
     }
 
-    public PathCheckResult checkObjectParameterPath(String objectName, List<Object> pathParts) {
-        try {
-            return checkParameterPath(objectName, false, pathParts);
-        } catch (XPathExpressionException e) {
-            logger.error("Error checking object parameter path", e);
-            return new PathCheckResult(false, null, null);
-        }
-    }
-
-    public PathCheckResult checkObjectParameterPath(String objectName, String param){
-        return checkObjectParameterPath(objectName, List.of(param));
-    }
-
-
-
-    private final String findInteractionByNameExp =
-            "//interactionClass[name[text()='%s']]/parameter[name[text()='%s']]/dataType";
-    private final String findObjectByNameExp =
-            "//objectClass[name[text()='%s']]/attribute[name[text()='%s']]/dataType";
     private final String fixedRecordDataTypeExp =
             "//fixedRecordData[name[text()='%s']]/field[name[text()='%s']]/dataType";
     private final String arrayDataTypeExp = "//arrayData[name[text()='%s']]/dataType";
@@ -137,10 +118,12 @@ public class FOMXML {
      * root of the resolved path.
      *
      */
-    private PathCheckResult checkParameterPath(String entityName, boolean isInteraction, List<Object> pathParts)
+    private PathCheckResult checkInteractionParameterPathInternal(
+            String interactionName,
+            List<Object> pathParts)
             throws XPathExpressionException {
-        if (entityName == null || entityName.isEmpty())
-            throw new IllegalArgumentException("entity name is required");
+        if (interactionName == null || interactionName.isEmpty())
+            throw new IllegalArgumentException("interaction name is required");
 
         if (pathParts == null || pathParts.isEmpty())
             throw new IllegalArgumentException("First element of pathParts must be the parameter name (String)");
@@ -150,7 +133,7 @@ public class FOMXML {
             throw new IllegalArgumentException("First element of pathParts must be the parameter name (String)");
         }
 
-        String currentTypeName = getParameterType(entityName, (String) first, isInteraction);
+        String currentTypeName = getInteractionParameterType(interactionName, (String) first);
 
         if (currentTypeName == null || currentTypeName.isEmpty()) {
             return new PathCheckResult(false, null, null);
@@ -166,14 +149,10 @@ public class FOMXML {
                 if (idx < 0) {
                     throw new IllegalArgumentException("Array index must be 0 or greater");
                 }
-                // resolve array element dataType for currentTypeName
-                String exp = String.format(arrayDataTypeExp, currentTypeName);
-                foundType = (String) xPath.compile(exp).evaluate(doc, XPathConstants.STRING);
+                foundType = getArrayElementType(currentTypeName);
             } else if (part instanceof String) {
                 String fieldName = (String) part;
-                // try fixedRecord field
-                String fixedRecordExp = String.format(fixedRecordDataTypeExp, currentTypeName, fieldName);
-                foundType = (String) xPath.compile(fixedRecordExp).evaluate(doc, XPathConstants.STRING);
+                foundType = getFixedRecordFieldType(currentTypeName, fieldName);
             } else {
                 throw new IllegalArgumentException("Path parts must be String (field name) or Integer (array index)");
             }
@@ -185,20 +164,7 @@ public class FOMXML {
             currentTypeName = foundType;
         }
 
-        // currentTypeName is now the type at the end of the path. It may be
-        // primitive, simpleData, enumeratedData, or another custom type.
-        // If it's a primitive, return it. Otherwise try to resolve to a primitive via getRawType.
-        if (isPrim(currentTypeName)) {
-            return new PathCheckResult(true, currentTypeName, currentTypeName);
-        }
-
-        String raw = getRawType(currentTypeName);
-        if (raw != null && !raw.isEmpty() && isPrim(raw)) {
-            return new PathCheckResult(true, raw, currentTypeName);
-        }
-
-        // Not resolved to a primitive
-        return new PathCheckResult(true, null, currentTypeName);
+        return new PathCheckResult(true, resolvePrimitiveType(currentTypeName), currentTypeName);
     }
 
     private final String checkSimpleDataTypeExp = "//simpleData[name[text()='%s']]/representation";
@@ -252,6 +218,9 @@ public class FOMXML {
     /**
      * Return the object-class hierarchy as immutable, XML-free definitions.
      *
+     * <p>Class and parent names are canonical, root-relative HLA names. The
+     * standard {@code HLAobjectRoot} prefix is omitted for its descendants.
+     *
      * <p>Only attributes declared directly on a class are included. Consumers that
      * need inherited attributes can apply inheritance using {@link
      * ObjectClassDefinition#parentName()} without accessing the raw FOM document.
@@ -280,6 +249,9 @@ public class FOMXML {
         if (className == null) {
             return;
         }
+        String canonicalName = parentName == null || parentName.equals("HLAobjectRoot")
+                ? className
+                : parentName + "." + className;
 
         List<ObjectAttributeDefinition> attributes = new ArrayList<>();
         for (Element attribute : childElements(objectClass, "attribute")) {
@@ -289,10 +261,10 @@ public class FOMXML {
                 attributes.add(new ObjectAttributeDefinition(attributeName, dataType));
             }
         }
-        definitions.add(new ObjectClassDefinition(className, parentName, attributes));
+        definitions.add(new ObjectClassDefinition(canonicalName, parentName, attributes));
 
         for (Element childClass : childElements(objectClass, "objectClass")) {
-            collectObjectClassDefinitions(childClass, className, definitions);
+            collectObjectClassDefinitions(childClass, canonicalName, definitions);
         }
     }
 
@@ -327,11 +299,61 @@ public class FOMXML {
         return elements;
     }
 
-    public String getParameterType(String entityName, String parameterName, boolean isInteraction)
-            throws XPathExpressionException {
-        String exp = String.format(isInteraction ? findInteractionByNameExp : findObjectByNameExp,
-                entityName, parameterName);
-        return (String) xPath.compile(exp).evaluate(doc, XPathConstants.STRING);
+    String getInteractionParameterType(String interactionName, String parameterName) {
+        Element interactionClass = findInteractionClass(interactionName);
+        while (interactionClass != null) {
+            Element parameter = findNamedChild(interactionClass, "parameter", parameterName);
+            String dataType = childText(parameter, "dataType");
+            if (dataType != null) {
+                return dataType;
+            }
+            Node parent = interactionClass.getParentNode();
+            interactionClass = parent instanceof Element element
+                    && element.getTagName().equals("interactionClass")
+                            ? element
+                            : null;
+        }
+        return null;
+    }
+
+    private Element findInteractionClass(String canonicalName) {
+        if (canonicalName == null || canonicalName.isEmpty()
+                || doc == null || doc.getDocumentElement() == null) {
+            return null;
+        }
+        Element interactions = firstChildElement(doc.getDocumentElement(), "interactions");
+        Element interactionClass = findNamedChild(
+                interactions,
+                "interactionClass",
+                "HLAinteractionRoot");
+        if (canonicalName.equals("HLAinteractionRoot")) {
+            return interactionClass;
+        }
+        for (String className : canonicalName.split("\\.", -1)) {
+            if (className.isEmpty()) {
+                return null;
+            }
+            interactionClass = findNamedChild(
+                    interactionClass,
+                    "interactionClass",
+                    className);
+            if (interactionClass == null) {
+                return null;
+            }
+        }
+        return interactionClass;
+    }
+
+    private static Element findNamedChild(Element parent, String tagName, String name) {
+        if (name == null) {
+            return null;
+        }
+        for (Element child : childElements(parent, tagName)) {
+            if (name.equals(childText(child, "name"))) {
+                return child;
+            }
+        }
+        return null;
     }
 
     public String getArrayElementType(String arrayType) throws XPathExpressionException {

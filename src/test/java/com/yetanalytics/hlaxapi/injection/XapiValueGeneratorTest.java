@@ -30,7 +30,7 @@ class XapiValueGeneratorTest {
 
     @Test
     void usesPresetUriForObjectIdPaths() {
-        InjectionContext ctx = new InjectionContext() {};
+        InjectionContext ctx = new TestInjectionContext();
         ctx.setStatementPath(List.of("object", "id"));
         ctx.setObjectType("Activity");
         Object value = XapiValueGenerator.getTestValue(ctx, new Target(List.of("object", "id")), String.class);
@@ -42,7 +42,7 @@ class XapiValueGeneratorTest {
     @Test
     void usesPresetUuidForObjectIdPaths() {
 
-        InjectionContext ctx = new InjectionContext() {};
+        InjectionContext ctx = new TestInjectionContext();
         ctx.setStatementPath(List.of("object", "id"));
         ctx.setObjectType("StatementRef");
         Object value = XapiValueGenerator.getTestValue(ctx, new Target(List.of("object", "id")), String.class);
@@ -53,7 +53,7 @@ class XapiValueGeneratorTest {
 
     @Test
     void returnsRandomStringForActorNamePaths() {
-        InjectionContext ctx = new InjectionContext() {};
+        InjectionContext ctx = new TestInjectionContext();
         ctx.setStatementPath(List.of("actor", "name"));
         ctx.setObjectType("StatementRef");
         Object value = XapiValueGenerator.getTestValue(ctx, new Target(List.of("actor", "name")), String.class);
@@ -249,5 +249,3 @@ class XapiValueGeneratorTest {
         }
     }
 }
-
-

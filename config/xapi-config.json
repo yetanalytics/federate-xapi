@@ -40,6 +40,164 @@
                     }
                 }
             }
+        },
+        {
+            "type": "ObjectUpdate",
+            "class": "World",
+            "statement": {
+                "actor": {
+                    "objectType": "Agent",
+                    "name": "HLA xAPI Adapter",
+                    "account": {
+                        "homePage": "https://hla-federepl.example/adapters",
+                        "name": "world-monitor"
+                    }
+                },
+                "verb": {
+                    "id": "https://hla-federepl.example/verbs/advanced",
+                    "display": {"en-US": "advanced"}
+                },
+                "object": {
+                    "objectType": "Activity",
+                    "id": "https://hla-federepl.example/simulation/world",
+                    "definition": {
+                        "name": {"en-US": "HLA Federepl world"}
+                    }
+                },
+                "context": {
+                    "extensions": {
+                        "https://hla-federepl.example/extensions/previous-step-number": [
+                            "previous",
+                            ["StepNumber"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/current-step-number": [
+                            "trigger",
+                            ["StepNumber"]
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "type": "ObjectCreate",
+            "class": "SimEntity.Rabbit",
+            "statement": {
+                "actor": {
+                    "objectType": "Agent",
+                    "name": "HLA xAPI Adapter",
+                    "account": {
+                        "homePage": "https://hla-federepl.example/adapters",
+                        "name": "rabbit-lifecycle-monitor"
+                    }
+                },
+                "verb": {
+                    "id": "https://hla-federepl.example/verbs/appeared",
+                    "display": {"en-US": "appeared"}
+                },
+                "object": {
+                    "objectType": "Activity",
+                    "id": "https://hla-federepl.example/simulation/entities/rabbit",
+                    "definition": {
+                        "name": {"en-US": "Rabbit"}
+                    }
+                },
+                "context": {
+                    "extensions": {
+                        "https://hla-federepl.example/extensions/object-event": "ObjectCreate",
+                        "https://hla-federepl.example/extensions/entity-id": [
+                            "trigger",
+                            ["EntityId"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/first-name": [
+                            "trigger",
+                            ["FirstName"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/last-name": [
+                            "trigger",
+                            ["LastName"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/position-x": [
+                            "trigger",
+                            ["Position", "X"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/position-y": [
+                            "trigger",
+                            ["Position", "Y"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/hunger": [
+                            "trigger",
+                            ["Hunger"],
+                            {"required": false}
+                        ]
+                    }
+                }
+            }
+        },
+        {
+            "type": "ObjectDelete",
+            "class": "SimEntity.Rabbit",
+            "statement": {
+                "actor": {
+                    "objectType": "Agent",
+                    "name": "HLA xAPI Adapter",
+                    "account": {
+                        "homePage": "https://hla-federepl.example/adapters",
+                        "name": "rabbit-lifecycle-monitor"
+                    }
+                },
+                "verb": {
+                    "id": "https://hla-federepl.example/verbs/disappeared",
+                    "display": {"en-US": "disappeared"}
+                },
+                "object": {
+                    "objectType": "Activity",
+                    "id": "https://hla-federepl.example/simulation/entities/rabbit",
+                    "definition": {
+                        "name": {"en-US": "Rabbit"}
+                    }
+                },
+                "context": {
+                    "extensions": {
+                        "https://hla-federepl.example/extensions/object-event": "ObjectDelete",
+                        "https://hla-federepl.example/extensions/entity-id": [
+                            "trigger",
+                            ["EntityId"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/final-first-name": [
+                            "trigger",
+                            ["FirstName"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/final-last-name": [
+                            "trigger",
+                            ["LastName"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/final-position-x": [
+                            "trigger",
+                            ["Position", "X"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/final-position-y": [
+                            "trigger",
+                            ["Position", "Y"],
+                            {"required": false}
+                        ],
+                        "https://hla-federepl.example/extensions/final-hunger": [
+                            "trigger",
+                            ["Hunger"],
+                            {"required": false}
+                        ]
+                    }
+                }
+            }
         }
     ],
     "lrs": {

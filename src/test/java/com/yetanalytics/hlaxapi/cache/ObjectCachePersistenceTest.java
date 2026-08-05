@@ -4,29 +4,39 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.yetanalytics.hlaxapi.FOMXML;
 import com.yetanalytics.hlaxapi.HLAEncodingTestSupport;
 import com.yetanalytics.hlaxapi.HLADecoderRegistry;
+import com.yetanalytics.hlaxapi.InjectionHandler;
 import com.yetanalytics.hlaxapi.SimulationConfig;
+import com.yetanalytics.hlaxapi.TriggerProcessor;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.ComparisonOperator;
 import com.yetanalytics.hlaxapi.config.model.Criterion;
 import com.yetanalytics.hlaxapi.config.model.LogicalExpression;
 import com.yetanalytics.hlaxapi.config.model.LogicalOperator;
 import com.yetanalytics.hlaxapi.config.model.ObjectCacheConfig;
+import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TrackedObject;
+import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
+import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
 import hla.rti1516e.encoding.DataElement;
 import hla.rti1516e.encoding.EncoderException;
 import hla.rti1516e.encoding.EncoderFactory;
 import hla.rti1516e.encoding.HLAfixedRecord;
+import java.lang.reflect.Field;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
 
@@ -46,7 +56,7 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void initializesSchemaAndSeedsFomMetadata() throws SQLException {
         try (ObjectCache cache = newCache()) {
-            assertEquals(1, scalarLong(cache, "SELECT schema_version FROM object_cache_metadata"));
+            assertEquals(2, scalarLong(cache, "SELECT schema_version FROM object_cache_metadata"));
             assertTrue(count(cache, "SELECT COUNT(*) FROM fom_object_class") > 0);
             assertTrue(count(cache, "SELECT COUNT(*) FROM fom_attribute WHERE path_key = 'Position.X'") > 0);
         }
@@ -58,9 +68,9 @@ abstract class ObjectCachePersistenceTest {
         byte[] secondHunger = encoded(encoderFactory.createHLAinteger32BE(40));
 
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", firstHunger);
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", secondHunger);
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", firstHunger);
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", secondHunger);
 
             assertEquals(40, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
             assertEquals(1, count(cache, """
@@ -74,12 +84,204 @@ abstract class ObjectCachePersistenceTest {
     }
 
     @Test
+    void storesOneMultiAttributeReflectionWithSharedObservationMetadata() throws SQLException {
+        byte[] entityId = encoded(encoderFactory.createHLAASCIIstring("rabbit-one"));
+        byte[] hunger = encoded(encoderFactory.createHLAinteger32BE(75));
+        byte[] position = position(12, 8);
+
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues(
+                    "object-1",
+                    "SimEntity.Rabbit",
+                    Map.of(
+                            "EntityId", entityId,
+                            "Hunger", hunger,
+                            "Position", position));
+
+            assertEquals("rabbit-one", cache.findCurrentValue("object-1", "EntityId").orElseThrow().value());
+            assertEquals(75, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
+            assertEquals(12, cache.findCurrentValue("object-1", "Position.X").orElseThrow().value());
+            assertEquals(8, cache.findCurrentValue("object-1", "Position.Y").orElseThrow().value());
+            assertEquals(1, count(cache, "SELECT COUNT(DISTINCT observed_at) FROM object_attribute_current"));
+            assertEquals(1, count(cache, "SELECT COUNT(DISTINCT sequence) FROM object_attribute_current"));
+            assertEquals(1, count(cache, "SELECT COUNT(*) FROM object_instance WHERE object_handle = 'object-1'"));
+        }
+    }
+
+    @Test
+    void loadsCurrentObjectSnapshotWithTopLevelRawValuesAndMetadata() {
+        byte[] entityId = encoded(encoderFactory.createHLAASCIIstring("rabbit-one"));
+        byte[] hunger = encoded(encoderFactory.createHLAinteger32BE(75));
+        byte[] position = position(12, 8);
+        byte[] history = positionHistory(position(1, 2), position(3, 4));
+
+        try (ObjectCache cache = newCache(
+                "object-snapshot",
+                enabledConfig("Rabbit"),
+                dynamicArrayCatalog,
+                dynamicArrayFomXml)) {
+            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
+            cache.reflectAttributeValues(
+                    "object-1",
+                    "Rabbit",
+                    Map.of(
+                            "EntityId", entityId,
+                            "Hunger", hunger,
+                            "Position", position,
+                            "PositionHistory", history));
+
+            ObjectSnapshot snapshot = cache.findCurrentObjectSnapshot("object-1").orElseThrow();
+
+            assertEquals("object-1", snapshot.objectHandle());
+            assertEquals("Rabbit One", snapshot.objectName());
+            assertEquals("Rabbit", snapshot.className());
+            assertEquals(4, snapshot.attributes().size());
+            assertArrayEquals(entityId, snapshot.attributes().get("EntityId"));
+            assertArrayEquals(hunger, snapshot.attributes().get("Hunger"));
+            assertArrayEquals(position, snapshot.attributes().get("Position"));
+            assertArrayEquals(history, snapshot.attributes().get("PositionHistory"));
+
+            cache.removeObject("object-1");
+
+            assertTrue(cache.findCurrentObjectSnapshot("object-1").isEmpty());
+        }
+    }
+
+    @Test
+    void validatesTheCompleteReflectionBeforeWriting() {
+        byte[] oldHunger = encoded(encoderFactory.createHLAinteger32BE(40));
+        byte[] newHunger = encoded(encoderFactory.createHLAinteger32BE(75));
+
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", oldHunger);
+
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> cache.reflectAttributeValues(
+                            "object-1",
+                            "SimEntity.Rabbit",
+                            Map.of(
+                                    "Hunger", newHunger,
+                                    "NotInTheFom", new byte[] { 1 })));
+
+            assertEquals(40, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
+        }
+    }
+
+    @Test
+    void ignoresEmptyReflections() throws SQLException {
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues("object-1", "SimEntity.Rabbit", Map.of());
+
+            assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_instance"));
+            assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_attribute_current"));
+        }
+    }
+
+    @Test
+    void rollsBackEveryExistingValueWhenAReflectionFails() {
+        byte[] oldEntityId = encoded(encoderFactory.createHLAASCIIstring("rabbit-old"));
+        byte[] oldHunger = encoded(encoderFactory.createHLAinteger32BE(40));
+        byte[] newHunger = encoded(encoderFactory.createHLAinteger32BE(75));
+
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues(
+                    "object-1",
+                    "SimEntity.Rabbit",
+                    Map.of(
+                            "EntityId", oldEntityId,
+                            "Hunger", oldHunger));
+            FomCatalog.ObjectClassDef rabbit = catalog.objectClass("SimEntity.Rabbit").orElseThrow();
+            ReflectedAttributeValues hunger = new ReflectedAttributeValues(
+                    "Hunger",
+                    List.of(new DecodedAttributeValue(
+                            "Hunger",
+                            "HLAinteger32BE",
+                            "HLAinteger32BE",
+                            75,
+                            newHunger,
+                            true)));
+            ReflectedAttributeValues entityId = new ReflectedAttributeValues(
+                    "EntityId",
+                    List.of(new DecodedAttributeValue(
+                            "EntityId",
+                            "HLAASCIIstring",
+                            "HLAASCIIstring",
+                            new Object(),
+                            oldEntityId,
+                            true)));
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> cache.store().replaceCurrentValues(
+                            "object-1",
+                            rabbit,
+                            List.of(hunger, entityId),
+                            "2026-07-27T00:00:00Z",
+                            2));
+
+            assertEquals("rabbit-old", cache.findCurrentValue("object-1", "EntityId").orElseThrow().value());
+            assertEquals(40, cache.findCurrentValue("object-1", "Hunger").orElseThrow().value());
+        }
+    }
+
+    @Test
+    void rollsBackObjectValuesAndDynamicMetadataWhenAReflectionFails() throws SQLException {
+        try (ObjectCache cache = newCache(
+                "reflection-rollback",
+                enabledConfig("Rabbit"),
+                dynamicArrayCatalog,
+                dynamicArrayFomXml)) {
+            FomCatalog.ObjectClassDef rabbit = dynamicArrayCatalog.objectClass("Rabbit").orElseThrow();
+            byte[] encodedValue = encoded(encoderFactory.createHLAinteger32BE(1));
+            ReflectedAttributeValues positionHistory = new ReflectedAttributeValues(
+                    "PositionHistory",
+                    List.of(
+                            new DecodedAttributeValue(
+                                    "PositionHistory[0].X",
+                                    "HLAinteger32BE",
+                                    "HLAinteger32BE",
+                                    1,
+                                    encodedValue,
+                                    true),
+                            new DecodedAttributeValue(
+                                    "PositionHistory[0].Y",
+                                    "HLAinteger32BE",
+                                    "HLAinteger32BE",
+                                    new Object(),
+                                    encodedValue,
+                                    true)));
+
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> cache.store().replaceCurrentValues(
+                            "object-rollback",
+                            rabbit,
+                            List.of(positionHistory),
+                            "2026-07-27T00:00:00Z",
+                            1));
+
+            assertEquals(
+                    0,
+                    count(cache, "SELECT COUNT(*) FROM object_instance WHERE object_handle = 'object-rollback'"));
+            assertEquals(
+                    0,
+                    count(cache, """
+                            SELECT COUNT(*)
+                            FROM fom_attribute
+                            WHERE path_key LIKE 'PositionHistory[0].%'
+                            """));
+            assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_attribute_current"));
+        }
+    }
+
+    @Test
     void flattensFixedRecordValuesToNestedCurrentRows() {
         byte[] position = position(12, 8);
 
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Position", position);
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Position", position);
 
             assertEquals(12, cache.findCurrentValue("object-1", "Position.X").orElseThrow().value());
             assertEquals(8, cache.findCurrentValue("object-1", "Position.Y").orElseThrow().value());
@@ -93,7 +295,7 @@ abstract class ObjectCachePersistenceTest {
 
         try (ObjectCache cache = newCache(
                 "dynamic-array",
-                enabledConfig(),
+                enabledConfig("Rabbit"),
                 dynamicArrayCatalog,
                 dynamicArrayFomXml)) {
             cache.discoverObject("object-1", "Rabbit One", "Rabbit");
@@ -153,17 +355,17 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void queryServiceEvaluatesCriteriaAndExcludesRemovedObjects() {
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
                     "rabbit-one")));
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(75)));
-            cache.reflectAttributeValue("object-1", "Rabbit", "Position", position(12, 8));
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(75)));
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Position", position(12, 8));
 
-            cache.discoverObject("object-2", "Rabbit Two", "Rabbit");
-            cache.reflectAttributeValue("object-2", "Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
+            cache.discoverObject("object-2", "Rabbit Two", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-2", "SimEntity.Rabbit", "EntityId", encoded(encoderFactory.createHLAASCIIstring(
                     "rabbit-two")));
-            cache.reflectAttributeValue("object-2", "Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(20)));
-            cache.reflectAttributeValue("object-2", "Rabbit", "Position", position(20, 5));
+            cache.reflectAttributeValue("object-2", "SimEntity.Rabbit", "Hunger", encoded(encoderFactory.createHLAinteger32BE(20)));
+            cache.reflectAttributeValue("object-2", "SimEntity.Rabbit", "Position", position(20, 5));
 
             Criterion hungerCriteria = new Criterion(
                     new Target(List.of("Hunger")),
@@ -177,11 +379,11 @@ abstract class ObjectCachePersistenceTest {
 
             assertEquals(
                     List.of("rabbit-one"),
-                    cache.queryService().findValues("Rabbit", new Target(List.of("EntityId")), hungerCriteria));
+                    cache.queryService().findValues("SimEntity.Rabbit", new Target(List.of("EntityId")), hungerCriteria));
             assertEquals(
                     List.of(8),
-                    cache.queryService().findValues("Rabbit", new Target(List.of("Position", "Y")), criteria));
-            CachedObject matched = cache.queryService().findFirstObject("Rabbit", criteria).orElseThrow();
+                    cache.queryService().findValues("SimEntity.Rabbit", new Target(List.of("Position", "Y")), criteria));
+            CachedObject matched = cache.queryService().findFirstObject("SimEntity.Rabbit", criteria).orElseThrow();
             assertEquals("object-1", matched.objectHandle());
             assertEquals(
                     8,
@@ -189,17 +391,171 @@ abstract class ObjectCachePersistenceTest {
 
             cache.removeObject("object-1");
 
-            assertFalse(cache.queryService().findFirstValue("Rabbit", new Target(List.of("Hunger")), criteria)
+            assertFalse(cache.queryService().findFirstValue("SimEntity.Rabbit", new Target(List.of("Hunger")), criteria)
                     .isPresent());
+        }
+    }
+
+    @Test
+    void baseClassQueryFindsObjectsCachedAsDescendantClasses() {
+        try (ObjectCache cache = newCache()) {
+            cache.discoverObject("entity-1", "Entity One", "SimEntity");
+            cache.discoverObject("rabbit-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValues(
+                    "rabbit-1",
+                    "SimEntity.Rabbit",
+                    Map.of(
+                            "EntityId", encoded(encoderFactory.createHLAASCIIstring("rabbit-one")),
+                            "FirstName", encoded(encoderFactory.createHLAunicodeString("Alice"))));
+            cache.discoverObject("wolf-1", "Wolf One", "SimEntity.Wolf");
+            Criterion entityId = new Criterion(
+                    new Target(List.of("EntityId")),
+                    ComparisonOperator.EQ,
+                    new ValueExpression("rabbit-one"));
+
+            CachedObject matched =
+                    cache.queryService().findFirstObject("SimEntity", entityId).orElseThrow();
+
+            assertEquals("SimEntity.Rabbit", matched.className());
+            assertEquals(
+                    "Alice",
+                    cache.queryService()
+                            .findValue(matched, new Target(List.of("FirstName")))
+                            .orElseThrow());
+            assertEquals(
+                    List.of("entity-1", "rabbit-1", "wolf-1"),
+                    cache.currentObjects("SimEntity").stream()
+                            .map(CachedObject::objectHandle)
+                            .toList());
+            assertEquals(
+                    List.of("rabbit-1"),
+                    cache.currentObjects("SimEntity.Rabbit").stream()
+                            .map(CachedObject::objectHandle)
+                            .toList());
+
+            cache.removeObject("wolf-1");
+
+            assertEquals(
+                    List.of("entity-1", "rabbit-1"),
+                    cache.currentObjects("SimEntity").stream()
+                            .map(CachedObject::objectHandle)
+                            .toList());
+        }
+    }
+
+    @Test
+    void entityAteLookupFindsRabbitThroughSimEntityBaseClass() throws Exception {
+        try (ObjectCache cache = newCache()) {
+            cache.reflectAttributeValues(
+                    "rabbit-1",
+                    "SimEntity.Rabbit",
+                    Map.of(
+                            "EntityId", encoded(encoderFactory.createHLAASCIIstring("rabbit-one")),
+                            "FirstName", encoded(encoderFactory.createHLAunicodeString("Alice"))));
+            ObjectLookup predator = new ObjectLookup();
+            predator.clazz = "SimEntity";
+            predator.criteria = new Criterion(
+                    new Target(List.of("EntityId")),
+                    ComparisonOperator.EQ,
+                    new TriggerExpression(new Target(List.of("PredatorId"))));
+            StatementTrigger trigger = new StatementTrigger();
+            trigger.type = StatementTrigger.Type.INTERACTION;
+            trigger.clazz = "EntityAte";
+            trigger.lookups = Map.of("predator", predator);
+            trigger.statement = "{\"predator\":[\"lookup\",\"predator\",[\"FirstName\"]]}";
+            InjectionHandler injectionHandler = new InjectionHandler();
+            injectionHandler.setFomXml(fomXml);
+            injectionHandler.setHLADecoderRegistry(decoderRegistry);
+            injectionHandler.setFomCatalog(catalog);
+            setField(injectionHandler, "objectCache", cache);
+
+            TriggerProcessor.TriggerProcessingResult result =
+                    new TriggerProcessor(injectionHandler).processTrigger(
+                            trigger,
+                            new InteractionInjectionContext(
+                                    "EntityAte",
+                                    Map.of(
+                                            "PredatorId",
+                                            encoded(encoderFactory.createHLAASCIIstring("rabbit-one")))));
+
+            assertTrue(result.success());
+            assertEquals("{\"predator\":\"Alice\"}", result.statement());
+        }
+    }
+
+    @Test
+    void previousResolutionSupportsNestedArraysCachedNullAndMissingValues() throws Exception {
+        try (ObjectCache cache = newCache(
+                "previous-resolution",
+                enabledConfig("Rabbit"),
+                dynamicArrayCatalog,
+                dynamicArrayFomXml)) {
+            cache.reflectAttributeValues(
+                    "rabbit-1",
+                    "Rabbit",
+                    Map.of(
+                            "Position", position(12, 8),
+                            "PositionHistory", positionHistory(position(1, 2), position(3, 4)),
+                            "Hunger", new byte[] {1}));
+            InjectionHandler injectionHandler = new InjectionHandler();
+            injectionHandler.setFomXml(dynamicArrayFomXml);
+            injectionHandler.setHLADecoderRegistry(decoderRegistry);
+            injectionHandler.setFomCatalog(dynamicArrayCatalog);
+            setField(injectionHandler, "objectCache", cache);
+            ObjectUpdateInjectionContext context =
+                    new ObjectUpdateInjectionContext("Rabbit", "rabbit-1", Map.of());
+
+            ValueResolution nested = injectionHandler.handlePrevious(
+                    new Target(List.of("Position", "X")),
+                    context);
+            ValueResolution array = injectionHandler.handlePrevious(
+                    new Target(List.of("PositionHistory", 1, "Y")),
+                    context);
+            ValueResolution cachedNull = injectionHandler.handlePrevious(
+                    new Target(List.of("Hunger")),
+                    context);
+            ValueResolution missing = injectionHandler.handlePrevious(
+                    new Target(List.of("EntityId")),
+                    context);
+
+            assertEquals(ValueResolution.Status.PRESENT, nested.status());
+            assertEquals(12, nested.value());
+            assertEquals(ValueResolution.Status.PRESENT, array.status());
+            assertEquals(4, array.value());
+            assertEquals(ValueResolution.Status.PRESENT, cachedNull.status());
+            assertNull(cachedNull.value());
+            assertEquals(ValueResolution.Status.MISSING_VALUE, missing.status());
+
+            StatementTrigger nullablePrevious = new StatementTrigger();
+            nullablePrevious.type = StatementTrigger.Type.OBJECT_UPDATE;
+            nullablePrevious.clazz = "Rabbit";
+            nullablePrevious.statement =
+                    "{\"oldHunger\":[\"previous\",[\"Hunger\"],{\"nullable\":true}]}";
+            TriggerProcessor.TriggerProcessingResult rendered =
+                    new TriggerProcessor(injectionHandler).processTrigger(
+                            nullablePrevious,
+                            context);
+
+            assertTrue(rendered.success());
+            assertEquals("{\"oldHunger\":null}", rendered.statement());
+
+            cache.removeObject("rabbit-1");
+
+            assertEquals(
+                    ValueResolution.Status.MISSING_VALUE,
+                    injectionHandler.handlePrevious(
+                                    new Target(List.of("Position", "X")),
+                                    context)
+                            .status());
         }
     }
 
     @Test
     void queryServiceDistinguishesPresentNullFromMissingValue() {
         try (ObjectCache cache = newCache()) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger", new byte[] { 1 });
-            CachedObject matched = cache.queryService().findFirstObject("Rabbit", null).orElseThrow();
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger", new byte[] { 1 });
+            CachedObject matched = cache.queryService().findFirstObject("SimEntity.Rabbit", null).orElseThrow();
 
             ValueResolution presentNull = cache.queryService().findValueResolution(
                     matched,
@@ -217,8 +573,8 @@ abstract class ObjectCachePersistenceTest {
     @Test
     void persistentCacheStartsFreshOnInitialization() throws SQLException {
         try (ObjectCache cache = newCache("fresh-start")) {
-            cache.discoverObject("object-1", "Rabbit One", "Rabbit");
-            cache.reflectAttributeValue("object-1", "Rabbit", "Hunger",
+            cache.discoverObject("object-1", "Rabbit One", "SimEntity.Rabbit");
+            cache.reflectAttributeValue("object-1", "SimEntity.Rabbit", "Hunger",
                     encoded(encoderFactory.createHLAinteger32BE(75)));
 
             assertEquals(1, count(cache, "SELECT COUNT(*) FROM object_instance"));
@@ -229,6 +585,59 @@ abstract class ObjectCachePersistenceTest {
             assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_instance"));
             assertEquals(0, count(cache, "SELECT COUNT(*) FROM object_attribute_current"));
             assertTrue(count(cache, "SELECT COUNT(*) FROM fom_object_class") > 0);
+        }
+    }
+
+    @Test
+    void keepsDuplicateLocalClassNamesIsolatedByCanonicalIdentity() throws SQLException {
+        FOMXML ambiguousFomXml = new FOMXML(
+                new SimulationConfig(
+                        null,
+                        null,
+                        null,
+                        null,
+                        "src/test/resources/config/AmbiguousClassNamesFOM.xml"),
+                decoderRegistry);
+        FomCatalog ambiguousCatalog = new FomCatalog(ambiguousFomXml);
+        ObjectCacheConfig objectCacheConfig = new ObjectCacheConfig();
+        objectCacheConfig.trackedObjects = List.of(
+                trackedObject("SimEntity.Rabbit"),
+                trackedObject("SomeOtherSuperclass.Rabbit"));
+        XapiConfig config = new XapiConfig();
+        config.objectCacheConfig = objectCacheConfig;
+
+        try (ObjectCache cache = newCache(
+                "duplicate-local-names",
+                config,
+                ambiguousCatalog,
+                ambiguousFomXml)) {
+            cache.discoverObject("entity-rabbit", "Entity Rabbit", "SimEntity.Rabbit");
+            cache.reflectAttributeValue(
+                    "entity-rabbit",
+                    "SimEntity.Rabbit",
+                    "Hunger",
+                    encoded(encoderFactory.createHLAinteger32BE(12)));
+            cache.discoverObject(
+                    "other-rabbit",
+                    "Other Rabbit",
+                    "SomeOtherSuperclass.Rabbit");
+            cache.reflectAttributeValue(
+                    "other-rabbit",
+                    "SomeOtherSuperclass.Rabbit",
+                    "Speed",
+                    encoded(encoderFactory.createHLAinteger32BE(34)));
+
+            CachedObject entityRabbit = cache.currentObjects("SimEntity.Rabbit").get(0);
+            CachedObject otherRabbit = cache.currentObjects("SomeOtherSuperclass.Rabbit").get(0);
+            assertEquals("SimEntity.Rabbit", entityRabbit.className());
+            assertEquals("SomeOtherSuperclass.Rabbit", otherRabbit.className());
+            assertEquals(12, cache.findValue(entityRabbit, new Target(List.of("Hunger"))).orElseThrow());
+            assertEquals(34, cache.findValue(otherRabbit, new Target(List.of("Speed"))).orElseThrow());
+            assertEquals(2, count(cache, """
+                    SELECT COUNT(*)
+                    FROM fom_object_class
+                    WHERE hla_name IN ('SimEntity.Rabbit', 'SomeOtherSuperclass.Rabbit')
+                    """));
         }
     }
 
@@ -247,14 +656,23 @@ abstract class ObjectCachePersistenceTest {
             FOMXML cacheFomXml);
 
     protected XapiConfig enabledConfig() {
-        TrackedObject trackedObject = new TrackedObject();
-        trackedObject.clazz = "Rabbit";
-        trackedObject.allAttributes = true;
+        return enabledConfig("SimEntity.Rabbit");
+    }
+
+    protected XapiConfig enabledConfig(String className) {
+        TrackedObject trackedObject = trackedObject(className);
         ObjectCacheConfig objectCacheConfig = new ObjectCacheConfig();
         objectCacheConfig.trackedObjects = List.of(trackedObject);
         XapiConfig config = new XapiConfig();
         config.objectCacheConfig = objectCacheConfig;
         return config;
+    }
+
+    private TrackedObject trackedObject(String className) {
+        TrackedObject trackedObject = new TrackedObject();
+        trackedObject.clazz = className;
+        trackedObject.allAttributes = true;
+        return trackedObject;
     }
 
     protected byte[] position(int x, int y) {
@@ -285,6 +703,12 @@ abstract class ObjectCachePersistenceTest {
                 ResultSet resultSet = statement.executeQuery()) {
             return resultSet.next() ? resultSet.getLong(1) : 0L;
         }
+    }
+
+    private void setField(Object target, String fieldName, Object value) throws ReflectiveOperationException {
+        Field field = target.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     protected byte[] rawBytes(ObjectCache cache, String pathKey) throws SQLException {
