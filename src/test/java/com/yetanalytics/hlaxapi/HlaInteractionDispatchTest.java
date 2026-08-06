@@ -2,6 +2,7 @@ package com.yetanalytics.hlaxapi;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.yetanalytics.extension.SuppressTestLogging;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.LrsConfig;
@@ -28,6 +29,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class HlaInteractionDispatchTest {
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void canonicalNestedInteractionsSubscribeAndDispatchIndependently() throws Exception {
         HLADecoderRegistry decoderRegistry =
                 new HLADecoderRegistry(new HLA1516eEncoderFactory());

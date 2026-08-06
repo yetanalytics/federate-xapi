@@ -70,6 +70,7 @@ class HlaObjectSubscriptionTest {
     private Path tempDir;
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void eventOnlyConfigurationSubscribesRequestsAndProcessesReflections() throws Exception {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(objectUpdateTrigger("SimEntity.Rabbit"));
@@ -107,6 +108,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void firstReflectionDispatchesObjectCreateAndObjectUpdateThenOnlyUpdates() throws Exception {
         StatementTrigger create = objectTrigger(
                 StatementTrigger.Type.OBJECT_CREATE,
@@ -151,6 +153,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void concreteLifecycleCallbacksDispatchEachMatchingAncestorAndConcreteTriggerOnce(
             @TempDir Path tempDir) throws Exception {
         XapiConfig config = new XapiConfig();
@@ -246,6 +249,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void emptyReflectionDoesNotDispatchCacheOrConsumePendingCreate() throws Exception {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
@@ -324,6 +328,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void deletionBeforeFirstReflectionClearsPendingCreate() throws Exception {
         XapiConfig config = new XapiConfig();
         config.statementTriggers =
@@ -348,7 +353,8 @@ class HlaObjectSubscriptionTest {
 
     @Test
     @SuppressTestLogging({
-        "com.yetanalytics.hlaxapi.TriggerProcessor"
+        "com.yetanalytics.hlaxapi.TriggerProcessor",
+        "com.yetanalytics.hlaxapi.HlaInterfaceImpl"
     })
     void firstReflectionConsumesCreateEvenWhenRequiredValuesAreMissing() throws Exception {
         StatementTrigger required = objectTrigger(
@@ -383,6 +389,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void objectDeleteUsesFinalSnapshotAndEnqueuesAfterRemoval(@TempDir Path tempDir) throws Exception {
         StatementTrigger delete = objectTrigger(
                 StatementTrigger.Type.OBJECT_DELETE,
@@ -530,6 +537,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void everyLifecycleCallbackOverloadUsesTheCommonPipelines(@TempDir Path tempDir) throws Exception {
         XapiConfig config = new XapiConfig();
         config.statementTriggers = List.of(
@@ -598,7 +606,8 @@ class HlaObjectSubscriptionTest {
 
     @Test
     @SuppressTestLogging({
-        "com.yetanalytics.hlaxapi.TriggerProcessor"
+        "com.yetanalytics.hlaxapi.TriggerProcessor",
+        "com.yetanalytics.hlaxapi.HlaInterfaceImpl"
     })
     void eventOnlyReflectionDispatchesMatchingTriggersOnceFromTheCompletePayload() throws Exception {
         StatementTrigger passing = objectUpdateTrigger(
@@ -667,6 +676,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void cachedQueriesAndLookupsRenderBeforeTheReflectionCommitsAndEnqueueAfterItCommits(
             @TempDir Path tempDir) throws Exception {
         StatementTrigger trigger = objectUpdateTrigger(
@@ -726,6 +736,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void previousCriteriaDetectChangesAndThresholdCrossings(@TempDir Path tempDir) throws Exception {
         StatementTrigger changed = objectUpdateTrigger(
                 "SimEntity.Rabbit",
@@ -789,7 +800,8 @@ class HlaObjectSubscriptionTest {
 
     @Test
     @SuppressTestLogging({
-        "com.yetanalytics.hlaxapi.TriggerProcessor"
+        "com.yetanalytics.hlaxapi.TriggerProcessor",
+        "com.yetanalytics.hlaxapi.HlaInterfaceImpl"
     })
     void firstObservationSupportsOptionalPreviousWithoutRetryingRequiredInjections(
             @TempDir Path tempDir) throws Exception {
@@ -930,6 +942,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void discoveryCachesMetadataAndRequestsMergedAttributes(@TempDir Path tempDir) throws Exception {
         XapiConfig config = configWithQueryAndObjectUpdate();
         try (ObjectCache cache = new ObjectCache(
@@ -953,6 +966,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void discoveryRequestsTheUnionOfChildAndAncestorSubscriptions(@TempDir Path tempDir) throws Exception {
         StatementTrigger simEntityQuery = new StatementTrigger();
         simEntityQuery.statement = """
@@ -990,6 +1004,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void ancestorQuerySubscribesDescendantsFirstAndCachesConcreteClasses(
             @TempDir Path tempDir) throws Exception {
         StatementTrigger simEntityQuery = new StatementTrigger();
@@ -1072,6 +1087,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void duplicateLocalObjectClassesRemainDistinctAcrossRtiCallbacks(
             @TempDir Path tempDir) throws Exception {
         FOMXML ambiguousFomXml = new FOMXML(
@@ -1135,6 +1151,7 @@ class HlaObjectSubscriptionTest {
     }
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void overlappingAncestorAndConcreteSubscriptionsDoNotDuplicateReflectionTriggers()
             throws Exception {
         XapiConfig config = new XapiConfig();

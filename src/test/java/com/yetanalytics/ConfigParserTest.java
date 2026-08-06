@@ -94,10 +94,8 @@ public class ConfigParserTest {
             assertNotNull(trigger.criteria);
             assertNotNull(trigger.clazz);
             assertNotNull(trigger.statement);
-            logger.info(trigger);
 
             String statement = triggerProcessor.processTrigger(trigger, injectionContext).statement();
-            logger.info(statement);
             assertEquals(statement, CONFIG_STATEMENT_RESULT);
 
         });
