@@ -55,6 +55,8 @@ import org.portico.impl.hla1516e.types.HLA1516eAttributeHandleSetFactory;
 import org.portico.impl.hla1516e.types.HLA1516eAttributeHandleValueMap;
 import org.portico.impl.hla1516e.types.HLA1516eHandle;
 import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class HlaObjectSubscriptionTest {
 
@@ -1407,7 +1409,7 @@ class HlaObjectSubscriptionTest {
         }
 
         private RecordingXapiClient(Consumer<String> onStatement) {
-            super(clientConfig(), new StatementValidator());
+            super(clientConfig(), new StatementValidator(), new JmsTemplate(), new TransactionTemplate());
             this.onStatement = onStatement;
         }
 

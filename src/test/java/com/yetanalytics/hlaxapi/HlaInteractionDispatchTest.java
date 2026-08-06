@@ -22,6 +22,8 @@ import org.junit.jupiter.api.Test;
 import org.portico.impl.hla1516e.types.HLA1516eHandle;
 import org.portico.impl.hla1516e.types.HLA1516eParameterHandleValueMap;
 import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class HlaInteractionDispatchTest {
 
@@ -163,7 +165,7 @@ class HlaInteractionDispatchTest {
         private final List<String> statements = new ArrayList<>();
 
         private RecordingXapiClient() {
-            super(clientConfig(), new StatementValidator());
+            super(clientConfig(), new StatementValidator(), new JmsTemplate(), new TransactionTemplate());
         }
 
         @Override
