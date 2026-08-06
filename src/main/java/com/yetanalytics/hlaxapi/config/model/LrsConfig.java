@@ -4,8 +4,8 @@ public class LrsConfig {
     public String host;
     public String key;
     public String secret;
-    public int batch;
-    public int maxRetries;
+    public int batch = 50;
+    public int maxRetries = 3;
 
     @Override
     public String toString() {

@@ -589,14 +589,10 @@ Fields:
 - `host`: LRS xAPI endpoint.
 - `key`: LRS basic auth username or key.
 - `secret`: LRS basic auth password or secret.
-- `batch`: Statement batch size passed to the xAPI client and used as the adapter buffer size.
-- `maxRetries`: Number of scheduled retry attempts before the current in-memory buffer is cleared after repeated LRS post failures.
+- `batch`: Max xAPI Statement batch size passed to the LRS in one POST.
+- `maxRetries`: Number of scheduled retry attempts before the current queue of statements is sent to dead letter queue after repeated LRS post failures.
 
-The buffer flush interval is controlled by the Java/Spring property `xapi.buffer.clear-rate`, defaulting to `10000` milliseconds.
-
-```shell
-java -Dxapi.buffer.clear-rate=5000 ...
-```
+See the [queue docs](broker-config.md) for more information on statement queue behavior.
 
 ### Example LRS
 

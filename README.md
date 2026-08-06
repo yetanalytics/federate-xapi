@@ -1,6 +1,6 @@
-## HLA xAPI Adapter Federate
+## Federate xAPI
 
-An HLA federate capable of converting HLA RTI interactions and object lifecycle events into xAPI Statements and storing them in a Learning Record Store.
+Federate xAPI is an HLA Federate that joins an existing Run-Time Infrastructure (RTI), subscribes to configured HLA objects and interactions, detects defined state changes, applies filtering and mapping rules, and sends resulting xAPI statements to a Learning Record Store. A supporting SQL cache maintains selected federation state for correlation and contextual enrichment. The architecture preserves HLA for simulation execution while introducing a standards-based activity-data layer for downstream analysis.
 
 ### Configuration
 
@@ -8,20 +8,28 @@ The Federate uses multiple sources of configuration including a Simulation.confi
 
 #### Simulation Config
 
-To connect to an HLA Federation, you will want to update the `Simulation.config` files (or `Simulation.pitch.config` if running in pitch mode). You will update the following fields to reflect the Federation details and also point to the appropriate FOM:
+To connect to an HLA Federation, you will want to update the `config/Simulation.config` files (or `config/Simulation.pitch.config` if running in pitch mode). You will update the following fields to reflect the Federation details and also point to the appropriate FOM:
 
 ```
 localSettingsDesignator=
 federationName=HlaFedereplSimulation
-federateName=xAPI Adapter HLA Federate
+federateName=Federate xAPI
 
 fom=config/HlaFedereplFOM.xml
 ```
 
 #### xAPI Config
 
-The sample `xapi-config.json` reflects the current state of compatible configuration options.
+The sample `config/xapi-config.json` reflects the current state of compatible configuration options.
 See the [HLA xAPI Adapter xAPI Configuration Reference](doc/xapi-config.md) for a full configuration reference.
+
+#### Database Config
+
+The application runs on an embedded SQLite database by default but there are other options. See the [database config docs](doc/db-config.md) for more info.
+
+#### Queue Config
+
+The application runs on an embedded ActiveMQ Artemis for queueing and decoupling. See the [queue config docs](doc/broker-config.md) for more info.
 
 ### Vendoring Portico
 
@@ -33,7 +41,7 @@ The vendoring script intentionally uses a Java-only Portico Ant build file. On L
 
 The build output does not bundle an RTI implementation. The development runtime targets add either the vendored Portico RTI jar or a local Pitch RTI install on the runtime classpath.
 
-You will need to update `config/Simulation.config` with the appropriate federate information, and `config/fom.xml` (or a new FOM referenced from `Simulation.config`) with the federate's appropriate FOM. The current config should work with the HlaStarterKit Project from Pitch.
+You will need to update `config/Simulation.config` with the appropriate federation information, and reference the target federation's appropriate FOM.
 
 To build and run federate once configured:
 
@@ -47,7 +55,8 @@ To run against a Pitch RTI installation instead of Portico:
 
 ```shell
 make clean build
-make run-dev-pitch PITCH_RTI_LIB="/path/to/prti1516e/lib/*"
+PITCH_RTI_LIB="/path/to/prti1516e/lib/*" \
+make run-dev-pitch
 ```
 
 ### Development Checks

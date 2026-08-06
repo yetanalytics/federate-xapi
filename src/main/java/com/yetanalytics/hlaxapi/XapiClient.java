@@ -89,7 +89,7 @@ public class XapiClient {
     }
 
     // Check and post buffer to LRS every 10 seconds (or ENV) if contains statements
-    @Scheduled(fixedDelayString = "${xapi.buffer.clear-rate:10000}")
+    @Scheduled(fixedDelayString = "${XAPI_BUFFER_CLEAR_RATE:10000}")
     private synchronized void clearBuffer() {
         logger.info("Attempting Buffer Clear");
 
