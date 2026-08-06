@@ -4,6 +4,7 @@ public sealed interface Expression
         permits Criterion,
                 LogicalExpression,
                 LookupExpression,
+                PreviousExpression,
                 QueryExpression,
                 Target,
                 TriggerExpression,

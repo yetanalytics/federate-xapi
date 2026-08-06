@@ -1,7 +1,10 @@
 package com.yetanalytics.hlaxapi;
 
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -15,7 +18,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
+import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ValueResolution;
+import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.injection.InjectionContext;
@@ -25,6 +30,7 @@ import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.InjectionOpti
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.InlineInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.LookupInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.ParseResult;
+import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.PreviousInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.QueryInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.StatementInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.TriggerInjection;
@@ -37,12 +43,28 @@ public class TriggerProcessor {
     @Autowired
     private InjectionHandler injectionHandler;
 
+    @Autowired
+    private XapiConfig xapiConfig;
+
+    @Autowired
+    private FomCatalog fomCatalog;
+
     public TriggerProcessor() {
     }
 
     // For tests and non-Spring code, allow injection of a custom InjectionHandler
     public TriggerProcessor(InjectionHandler injectionHandler) {
         this.injectionHandler = injectionHandler;
+    }
+
+    // For tests and non-Spring code that exercise trigger dispatch.
+    public TriggerProcessor(
+            XapiConfig xapiConfig,
+            InjectionHandler injectionHandler,
+            FomCatalog fomCatalog) {
+        this.xapiConfig = xapiConfig;
+        this.injectionHandler = injectionHandler;
+        this.fomCatalog = fomCatalog;
     }
 
     public record TriggerProcessingResult(String statement, boolean matched, boolean success, Throwable error) {
@@ -60,6 +82,85 @@ public class TriggerProcessor {
         }
     }
 
+    public record StagedStatement(StatementTrigger trigger, String statement) {
+    }
+
+    public List<StagedStatement> stage(InjectionContext context) {
+        if (xapiConfig.statementTriggers == null) {
+            return List.of();
+        }
+        StatementTrigger.Type eventType = context.eventType();
+        String hlaClass = context.getHlaClass();
+        List<StagedStatement> statements = new ArrayList<>();
+        for (StatementTrigger trigger : xapiConfig.statementTriggers) {
+            if (!matchesTrigger(trigger, eventType, hlaClass)) {
+                continue;
+            }
+            try {
+                logger.trace("Processing {} trigger for {}", eventType, hlaClass);
+                TriggerProcessingResult result = processTrigger(trigger, context);
+                if (result == null) {
+                    logger.error("Trigger {}.{} did not produce a processing result", eventType, hlaClass);
+                } else if (result.success() && result.matched()) {
+                    statements.add(new StagedStatement(trigger, result.statement()));
+                } else if (!result.success()) {
+                    logger.error("Error processing trigger {}.{}", eventType, hlaClass, result.error());
+                }
+            } catch (RuntimeException e) {
+                logger.error("Error processing trigger {}.{}", eventType, hlaClass, e);
+            }
+        }
+        return List.copyOf(statements);
+    }
+
+    public boolean hasMatchingTrigger(
+            StatementTrigger.Type eventType,
+            String hlaClass) {
+        if (xapiConfig.statementTriggers == null) {
+            return false;
+        }
+        return xapiConfig.statementTriggers.stream()
+                .anyMatch(trigger -> matchesTrigger(trigger, eventType, hlaClass));
+    }
+
+    private boolean matchesTrigger(
+            StatementTrigger trigger,
+            StatementTrigger.Type eventType,
+            String hlaClass) {
+        return trigger != null
+                && trigger.type == eventType
+                && matchesClass(eventType, trigger.clazz, hlaClass);
+    }
+
+    private boolean matchesClass(
+            StatementTrigger.Type eventType,
+            String configuredClass,
+            String actualClass) {
+        return eventType.isObjectEvent()
+                ? fomCatalog.isSameOrDescendant(actualClass, configuredClass)
+                : Objects.equals(configuredClass, actualClass);
+    }
+
+    public void enqueue(List<StagedStatement> statements, Consumer<String> statementSink) {
+        for (StagedStatement statement : statements) {
+            try {
+                statementSink.accept(statement.statement());
+            } catch (RuntimeException e) {
+                StatementTrigger trigger = statement.trigger();
+                logger.error("Error enqueueing statement for trigger {}.{}",
+                        trigger.type,
+                        trigger.clazz,
+                        e);
+            }
+        }
+    }
+
+    public void dispatch(
+            InjectionContext context,
+            Consumer<String> statementSink) {
+        enqueue(stage(context), statementSink);
+    }
+
     public TriggerProcessingResult processTrigger(StatementTrigger trigger, InjectionContext context) {
         return processTrigger(trigger, context, true);
     }
@@ -74,6 +175,15 @@ public class TriggerProcessor {
             boolean evaluateCriteria) {
         if (trigger == null || trigger.statement == null) {
             return null;
+        }
+        if (context == null) {
+            return TriggerProcessingResult.failed(
+                    new IllegalArgumentException("Injection context is required"));
+        }
+        if (trigger.type != context.eventType()) {
+            return TriggerProcessingResult.failed(new IllegalArgumentException(
+                    "Trigger type " + trigger.type
+                            + " does not match injection context type " + context.eventType()));
         }
         ObjectMapper mapper = new ObjectMapper();
         try {
@@ -216,6 +326,13 @@ public class TriggerProcessor {
                         injectionHandler.handleTrigger(triggerInjection.target(), context),
                         triggerInjection.options(),
                         injectionDescription(triggerInjection, null),
+                        embedded,
+                        mapper);
+            } else if (injection instanceof PreviousInjection previousInjection) {
+                return renderResolution(
+                        injectionHandler.handlePrevious(previousInjection.target(), context),
+                        previousInjection.options(),
+                        injectionDescription(previousInjection, null),
                         embedded,
                         mapper);
             } else if (injection instanceof QueryInjection queryInjection) {

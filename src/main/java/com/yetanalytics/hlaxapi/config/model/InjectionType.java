@@ -1,7 +1,7 @@
 package com.yetanalytics.hlaxapi.config.model;
 
 public enum InjectionType {
-    TRIGGER("trigger"), QUERY("query"), LOOKUP("lookup");
+    TRIGGER("trigger"), PREVIOUS("previous"), QUERY("query"), LOOKUP("lookup");
 
     public final String token;
 
@@ -14,6 +14,7 @@ public enum InjectionType {
         if (s == null) return null;
         switch (s.trim().toLowerCase()) {
             case "trigger": return TRIGGER;
+            case "previous": return PREVIOUS;
             case "query": return QUERY;
             case "lookup": return LOOKUP;
             default: return null;

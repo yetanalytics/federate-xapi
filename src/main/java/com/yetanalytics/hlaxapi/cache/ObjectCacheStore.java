@@ -5,9 +5,9 @@ import java.util.List;
 import java.util.Optional;
 
 interface ObjectCacheStore extends AutoCloseable {
-    boolean isOpen();
-
     CachedObject ensureObject(String objectHandle, String objectName, FomCatalog.ObjectClassDef clazz);
+
+    Optional<ObjectSnapshot> findCurrentObjectSnapshot(String objectHandle);
 
     void removeObject(String objectHandle, String removedAt);
 
@@ -15,13 +15,12 @@ interface ObjectCacheStore extends AutoCloseable {
 
     Optional<CachedValue> findCurrentValue(String objectHandle, String pathKey);
 
-    List<CachedObject> currentObjects(FomCatalog.ObjectClassDef clazz);
+    List<CachedObject> currentObjects(List<FomCatalog.ObjectClassDef> classes);
 
     void replaceCurrentValues(
-            long instanceId,
+            String objectHandle,
             FomCatalog.ObjectClassDef clazz,
-            String attributeName,
-            List<DecodedAttributeValue> values,
+            List<ReflectedAttributeValues> attributes,
             String observedAt,
             long observedSequence);
 

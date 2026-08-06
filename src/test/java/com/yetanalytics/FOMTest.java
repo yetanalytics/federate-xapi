@@ -25,10 +25,7 @@ public class FOMTest {
 
     @BeforeEach
     public void setUp() {
-        SimulationConfig simConfig = new SimulationConfig(null, null, null, null,
-            "config/HlaFedereplFOM.xml");
-        HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
-        fomXml = new FOMXML(simConfig, decoderRegistry);
+        fomXml = fomXml("config/HlaFedereplFOM.xml");
     }
 
     @Test
@@ -83,23 +80,47 @@ public class FOMTest {
     }
 
     @Test
-    public void ObjectsXML() {
+    public void CanonicalInteractionHierarchy() {
+        FOMXML duplicateNames = fomXml(
+                "src/test/resources/config/AmbiguousClassNamesFOM.xml");
 
-        // Simple object attribute - World.WorldId is HLAASCIIstring
-        PathCheckResult worldIdResult = fomXml.checkObjectParameterPath("World", "WorldId");
-        logger.info("World, WorldId: {}", worldIdResult);
-        assertTrue(worldIdResult.primitiveType.equals("HLAASCIIstring"));
+        assertTrue(duplicateNames
+                .checkInteractionParameterPath("EntityEvents.Updated", "EntityId")
+                .exists);
+        assertTrue(duplicateNames
+                .checkInteractionParameterPath("EntityEvents.Updated", "Hunger")
+                .exists);
+        assertTrue(!duplicateNames
+                .checkInteractionParameterPath("EntityEvents.Updated", "OtherId")
+                .exists);
+        assertTrue(duplicateNames
+                .checkInteractionParameterPath("OtherEvents.Updated", "OtherId")
+                .exists);
+        assertTrue(duplicateNames
+                .checkInteractionParameterPath("OtherEvents.Updated", "Speed")
+                .exists);
+        assertTrue(!duplicateNames
+                .checkInteractionParameterPath("OtherEvents.Updated", "EntityId")
+                .exists);
+        assertTrue(!duplicateNames
+                .checkInteractionParameterPath("Updated", "Hunger")
+                .exists);
+        assertTrue(!duplicateNames
+                .checkInteractionParameterPath("Created", "EntityId")
+                .exists);
+        assertTrue(duplicateNames
+                .checkInteractionParameterPath("EntityEvents.Created", "EntityId")
+                .exists);
+        assertTrue(!duplicateNames
+                .checkInteractionParameterPath(
+                        "HLAinteractionRoot.EntityEvents.Updated",
+                        "Hunger")
+                .exists);
+    }
 
-        // Simple data type attribute - World.Size is CellIndex (HLAinteger32BE)
-        PathCheckResult worldSizeResult = fomXml.checkObjectParameterPath("World", "Size");
-        logger.info("World, Size: {}", worldSizeResult);
-        assertTrue(worldSizeResult.primitiveType.equals("HLAinteger32BE"));
-
-        // Entity object attribute
-        PathCheckResult entityIdResult = fomXml.checkObjectParameterPath("SimEntity", "EntityId");
-        logger.info("SimEntity, EntityId: {}", entityIdResult);
-        assertTrue(entityIdResult.primitiveType.equals("HLAASCIIstring"));
-
-        // We won't duplicate extensive failure cases here; interactions cover them.
+    private static FOMXML fomXml(String path) {
+        SimulationConfig simConfig = new SimulationConfig(null, null, null, null, path);
+        HLADecoderRegistry decoderRegistry = new HLADecoderRegistry(new HLA1516eEncoderFactory());
+        return new FOMXML(simConfig, decoderRegistry);
     }
 }

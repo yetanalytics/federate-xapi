@@ -1,5 +1,6 @@
 package com.yetanalytics.hlaxapi.injection;
 
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import java.util.List;
 
 public abstract class InjectionContext {
@@ -8,6 +9,8 @@ public abstract class InjectionContext {
     private List<Object> statementPath = List.of();
     private boolean embedded = false;
     private String objectType;
+
+    public abstract StatementTrigger.Type eventType();
 
     public String getHlaClass() {
         return hlaClass;
@@ -45,4 +48,5 @@ public abstract class InjectionContext {
     public void setObjectType(String objectType) {
         this.objectType = objectType;
     }
+
 }

@@ -59,7 +59,7 @@ final class PostgresqlObjectCachePersistenceTest extends ObjectCachePersistenceT
     void synchronizesAttributeIdentityAfterExplicitFomIds() throws SQLException {
         try (ObjectCache cache = newCache("identity")) {
             long seededMaximum = scalarLong(cache, "SELECT MAX(id) FROM fom_attribute");
-            int rabbitClassId = catalog.objectClass("Rabbit").orElseThrow().id();
+            int rabbitClassId = catalog.objectClass("SimEntity.Rabbit").orElseThrow().id();
             try (PreparedStatement statement = cache.connection().prepareStatement("""
                     INSERT INTO fom_attribute
                         (class_id, attribute_name, path_key, data_type, primitive_type, is_leaf)

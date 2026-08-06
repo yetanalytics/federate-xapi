@@ -58,7 +58,7 @@ public class ConfigParser {
                 stt.lookups = parseLookups(tnode.get("lookups"));
                 try {
                     stt.criteria = CriteriaExpressionParser.parseNullable(tnode.get("criteria"));
-                    CriteriaExpressionValidator.validateTrigger(stt.criteria, stt.lookups);
+                    CriteriaExpressionValidator.validateTrigger(stt.criteria, stt.lookups, stt.type);
                 } catch (IllegalArgumentException e) {
                     throw new IllegalArgumentException(
                             "statementTriggers[" + triggerIndex + "].criteria: " + e.getMessage(),

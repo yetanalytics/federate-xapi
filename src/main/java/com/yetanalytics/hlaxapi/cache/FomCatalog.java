@@ -15,7 +15,7 @@ import javax.xml.xpath.XPathExpressionException;
 import org.springframework.stereotype.Component;
 
 /**
- * FOM-derived object metadata used by the SQLite cache.
+ * Canonical object metadata derived from the FOM.
  */
 @Component
 public final class FomCatalog {
@@ -29,7 +29,7 @@ public final class FomCatalog {
         for (FOMXML.ObjectClassDefinition definition : fomXml.objectClassDefinitions()) {
             builder.addObjectClass(definition);
         }
-        this.classesByName = builder.classesByName;
+        this.classesByName = Collections.unmodifiableMap(new LinkedHashMap<>(builder.classesByName));
 
         Map<Integer, ObjectClassDef> byId = new LinkedHashMap<>();
         Map<Integer, FomAttribute> attrsById = new LinkedHashMap<>();
@@ -47,12 +47,53 @@ public final class FomCatalog {
         return classesByName.values();
     }
 
+    /**
+     * Resolves an object class by its exact canonical name.
+     */
     public Optional<ObjectClassDef> objectClass(String name) {
-        return Optional.ofNullable(classesByName.get(localName(name)));
+        return Optional.ofNullable(classesByName.get(name));
     }
 
     public Optional<ObjectClassDef> objectClass(int id) {
         return Optional.ofNullable(classesById.get(id));
+    }
+
+    public List<ObjectClassDef> objectClassAndDescendants(String name) {
+        ObjectClassDef requestedClass = objectClass(name).orElse(null);
+        if (requestedClass == null) {
+            return List.of();
+        }
+        return classesByName.values().stream()
+                .filter(candidate -> isSameOrDescendant(candidate, requestedClass))
+                .toList();
+    }
+
+    /**
+     * Returns whether the actual object class is the configured class or one of
+     * its FOM descendants.
+     */
+    public boolean isSameOrDescendant(String actualClassName, String configuredClassName) {
+        ObjectClassDef actualClass = objectClass(actualClassName).orElse(null);
+        ObjectClassDef configuredClass = objectClass(configuredClassName).orElse(null);
+        return actualClass != null
+                && configuredClass != null
+                && isSameOrDescendant(actualClass, configuredClass);
+    }
+
+    /**
+     * Returns the number of known FOM ancestors for an object class, or -1 when
+     * the class is unknown.
+     */
+    public int objectClassDepth(String className) {
+        ObjectClassDef current = objectClass(className).orElse(null);
+        if (current == null) {
+            return -1;
+        }
+        int depth = 0;
+        while ((current = classesByName.get(current.parentName())) != null) {
+            depth++;
+        }
+        return depth;
     }
 
     public Optional<FomAttribute> attribute(int id) {
@@ -99,19 +140,20 @@ public final class FomCatalog {
         return pathKey.replaceAll("\\[[0-9]+\\]", "[]");
     }
 
-    static String localName(String hlaName) {
-        if (hlaName == null) {
-            return null;
+    private boolean isSameOrDescendant(ObjectClassDef candidate, ObjectClassDef requestedClass) {
+        ObjectClassDef current = candidate;
+        while (current != null) {
+            if (current.hlaName().equals(requestedClass.hlaName())) {
+                return true;
+            }
+            current = classesByName.get(current.parentName());
         }
-        String trimmed = hlaName.trim();
-        int index = trimmed.lastIndexOf('.');
-        return index >= 0 ? trimmed.substring(index + 1) : trimmed;
+        return false;
     }
 
     public record ObjectClassDef(
             int id,
             String hlaName,
-            String localName,
             String parentName,
             List<FomAttribute> attributes) {
 
@@ -189,10 +231,9 @@ public final class FomCatalog {
                     new ObjectClassDef(
                             classId,
                             definition.name(),
-                            localName(definition.name()),
-                            localName(definition.parentName()),
+                            definition.parentName(),
                             flattened);
-            classesByName.put(classDef.localName(), classDef);
+            classesByName.put(classDef.hlaName(), classDef);
         }
 
         private void flattenAttribute(

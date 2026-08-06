@@ -24,13 +24,15 @@ interface ObjectCacheQueries {
 
     String loadObject();
 
+    String loadCurrentObjectSnapshot();
+
     String removeObject();
 
     String findCurrentValue();
 
     String findObjectId();
 
-    String listCurrentObjects();
+    String listCurrentObjects(int classCount);
 
     String deleteCurrentValues();
 

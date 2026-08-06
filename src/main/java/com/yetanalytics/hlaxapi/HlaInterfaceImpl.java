@@ -3,11 +3,13 @@ package com.yetanalytics.hlaxapi;
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,10 +18,14 @@ import org.springframework.stereotype.Component;
 import com.yetanalytics.hlaxapi.TriggerProcessor.TriggerProcessingResult;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
+import com.yetanalytics.hlaxapi.cache.ObjectSnapshot;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.exception.XapiConfigurationException;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectCreateInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectDeleteInjectionContext;
+import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import com.yetanalytics.xapi.util.StatementValidator;
 import com.yetanalytics.xapi.util.StatementValidator.StatementValidationResult;
@@ -80,8 +86,12 @@ import hla.rti1516e.exceptions.UnsupportedCallbackModel;
 public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInterface {
 
     private static final Logger logger = LogManager.getLogger(HlaInterfaceImpl.class);
+    private static final String OBJECT_ROOT_PREFIX = "HLAobjectRoot.";
+    private static final String INTERACTION_ROOT_PREFIX = "HLAinteractionRoot.";
 
     private RTIambassador ambassador;
+
+    private final Map<String, String> pendingObjectCreates = new HashMap<>();
 
     @Autowired
     private XapiConfig xapiConfig;
@@ -94,6 +104,9 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     @Autowired
     private StatementValidator validator;
+
+    @Autowired
+    private FomConfigValidator fomConfigValidator;
 
     @Autowired
     private ObjectCache objectCache;
@@ -110,10 +123,6 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
         RtiFactory rtiFactory = RtiFactoryFactory.getRtiFactory();
         ambassador = rtiFactory.getRtiAmbassador();
-
-        if (!objectCache.isEnabled()) {
-            logger.info("No query injections or tracked objects configured; object cache is disabled");
-        }
 
         try {
             if (simulationConfig.getLocalSettingsDesignator() == null
@@ -193,15 +202,22 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     public void validateConfig() throws XapiConfigurationException {
         for(StatementTrigger st : xapiConfig.statementTriggers){
-            if (st.skipValidation) continue;
+            try {
+                fomConfigValidator.validate(st);
+            } catch (RuntimeException e) {
+                logger.error("Invalid Statement Trigger (Invalid FOM reference): {}", st, e);
+                throw new XapiConfigurationException("Could not validate xAPI Configuration", e);
+            }
             TriggerProcessingResult tpr = triggerProcessor.renderTemplateForValidation(
                     st,
-                    new TestInjectionContext(st.clazz));
+                    new TestInjectionContext(st.type, st.clazz));
             if (tpr.success()) {
-                StatementValidationResult svr = validator.validateStatement(tpr.statement());
-                if (!svr.isValid()){
-                    logger.error("Invalid Statement Trigger (Invalid xAPI): {}. {}", st, svr.getErrors());
-                    throw new XapiConfigurationException("Could not validate xAPI Configuration");
+                if (!st.skipValidation) {
+                    StatementValidationResult svr = validator.validateStatement(tpr.statement());
+                    if (!svr.isValid()){
+                        logger.error("Invalid Statement Trigger (Invalid xAPI): {}. {}", st, svr.getErrors());
+                        throw new XapiConfigurationException("Could not validate xAPI Configuration");
+                    }
                 }
             } else {
                 logger.error("Invalid Statement Trigger (Could not Process): {}. {}", st, tpr.error());
@@ -221,18 +237,23 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     private void subscribeObjectClasses()
             throws FederateNotExecutionMember, RestoreInProgress, SaveInProgress, NotConnected, RTIinternalError {
-        if (!objectCache.isEnabled()) {
+        if (!objectCache.hasSubscriptions()) {
             return;
         }
-        for (Map.Entry<String, Set<String>> subscription : objectCache.subscriptions().entrySet()) {
+        List<Map.Entry<String, Set<String>>> subscriptions =
+                new ArrayList<>(objectCache.subscriptions().entrySet());
+        subscriptions.sort(Comparator
+                .<Map.Entry<String, Set<String>>>comparingInt(subscription ->
+                        objectCache.catalog().objectClassDepth(subscription.getKey()))
+                .reversed()
+                .thenComparing(Map.Entry::getKey));
+        for (Map.Entry<String, Set<String>> subscription : subscriptions) {
             try {
                 FomCatalog.ObjectClassDef clazz = objectCache.catalog().objectClass(subscription.getKey()).orElseThrow(
                         () -> new IllegalArgumentException("No FOM object class " + subscription.getKey()));
-                ObjectClassHandle classHandle = ambassador.getObjectClassHandle(clazz.localName());
-                AttributeHandleSet attributeHandles = ambassador.getAttributeHandleSetFactory().create();
-                for (String attributeName : subscription.getValue()) {
-                    attributeHandles.add(ambassador.getAttributeHandle(classHandle, attributeName));
-                }
+                ObjectClassHandle classHandle = ambassador.getObjectClassHandle(clazz.hlaName());
+                AttributeHandleSet attributeHandles =
+                        attributeHandles(classHandle, subscription.getValue());
                 if (attributeHandles.isEmpty()) {
                     continue;
                 }
@@ -258,17 +279,55 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
             ObjectClassHandle theObjectClass,
             String objectName,
             hla.rti1516e.FederateHandle producingFederate) throws FederateInternalError {
-        if (!objectCache.isEnabled()) {
+        if (!objectCache.hasSubscriptions()) {
             return;
         }
+        String className;
         try {
-            String className = StringUtils.substringAfterLast(ambassador.getObjectClassName(theObjectClass), ".");
+            className = rootRelativeObjectClassName(
+                    ambassador.getObjectClassName(theObjectClass));
+        } catch (InvalidObjectClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError e) {
+            logger.error("Error resolving discovered object {}", objectName, e);
+            return;
+        }
+        Set<String> subscribedAttributes =
+                objectCache.effectiveSubscriptionAttributes(className);
+        if (subscribedAttributes.isEmpty()) {
+            return;
+        }
+        if (triggerProcessor.hasMatchingTrigger(
+                StatementTrigger.Type.OBJECT_CREATE,
+                className)) {
+            pendingObjectCreates.put(theObject.toString(), className);
+        }
+        try {
             objectCache.discoverObject(theObject.toString(), objectName, className);
-            logger.info("Discovered object {} as {}", objectName, className);
-        } catch (InvalidObjectClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError
-                | RuntimeException e) {
+        } catch (RuntimeException e) {
             logger.error("Error caching discovered object {}", objectName, e);
         }
+        try {
+            AttributeHandleSet attributeHandles = attributeHandles(theObjectClass, subscribedAttributes);
+            if (!attributeHandles.isEmpty()) {
+                ambassador.requestAttributeValueUpdate(theObject, attributeHandles, new byte[0]);
+            }
+            logger.info("Discovered object {} as {}", objectName, className);
+        } catch (ObjectInstanceNotKnown e) {
+            logger.debug("Discovered object {} was removed before its attributes could be requested", objectName);
+        } catch (AttributeNotDefined | InvalidObjectClassHandle | NameNotFound | FederateNotExecutionMember
+                | SaveInProgress | RestoreInProgress | NotConnected | RTIinternalError | RuntimeException e) {
+            logger.error("Error requesting values for discovered object {}", objectName, e);
+        }
+    }
+
+    private AttributeHandleSet attributeHandles(
+            ObjectClassHandle classHandle,
+            Iterable<String> attributeNames)
+            throws InvalidObjectClassHandle, NameNotFound, FederateNotExecutionMember, NotConnected, RTIinternalError {
+        AttributeHandleSet attributeHandles = ambassador.getAttributeHandleSetFactory().create();
+        for (String attributeName : attributeNames) {
+            attributeHandles.add(ambassador.getAttributeHandle(classHandle, attributeName));
+        }
+        return attributeHandles;
     }
 
     @Override
@@ -310,23 +369,42 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     }
 
     private void reflectAttributeValues(ObjectInstanceHandle theObject, AttributeHandleValueMap theAttributes) {
-        if (!objectCache.isEnabled()) {
+        if (!objectCache.hasSubscriptions()) {
             return;
         }
         try {
             ObjectClassHandle classHandle = ambassador.getKnownObjectClassHandle(theObject);
-            String className = StringUtils.substringAfterLast(ambassador.getObjectClassName(classHandle), ".");
+            String className = rootRelativeObjectClassName(
+                    ambassador.getObjectClassName(classHandle));
+            Map<String, byte[]> attributes = new HashMap<>();
             for (AttributeHandle attributeHandle : theAttributes.keySet()) {
                 String attributeName = ambassador.getAttributeName(classHandle, attributeHandle);
-                objectCache.reflectAttributeValue(
-                        theObject.toString(),
-                        className,
-                        attributeName,
-                        theAttributes.get(attributeHandle));
+                attributes.put(attributeName, theAttributes.get(attributeHandle));
             }
+            if (attributes.isEmpty()) {
+                logger.debug("Ignoring empty reflection for object {}", theObject);
+                return;
+            }
+            boolean createPending = className.equals(pendingObjectCreates.get(theObject.toString()));
+            List<TriggerProcessor.StagedStatement> statements = new ArrayList<>();
+            if (createPending) {
+                statements.addAll(triggerProcessor.stage(new ObjectCreateInjectionContext(
+                        className,
+                        theObject.toString(),
+                        attributes)));
+            }
+            statements.addAll(triggerProcessor.stage(new ObjectUpdateInjectionContext(
+                    className,
+                    theObject.toString(),
+                    attributes)));
+            objectCache.reflectAttributeValues(theObject.toString(), className, attributes);
+            if (createPending) {
+                pendingObjectCreates.remove(theObject.toString(), className);
+            }
+            triggerProcessor.enqueue(statements, xapiClient::sendStatement);
         } catch (AttributeNotDefined | InvalidAttributeHandle | InvalidObjectClassHandle | ObjectInstanceNotKnown
                 | FederateNotExecutionMember | NotConnected | RTIinternalError | RuntimeException e) {
-            logger.error("Error caching reflected object attributes", e);
+            logger.error("Error processing reflected object attributes", e);
         }
     }
 
@@ -363,14 +441,32 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
     }
 
     private void removeCachedObject(ObjectInstanceHandle theObject) {
-        if (!objectCache.isEnabled()) {
-            return;
-        }
+        String objectHandle = theObject.toString();
+        pendingObjectCreates.remove(objectHandle);
         try {
-            objectCache.removeObject(theObject.toString());
+            ObjectSnapshot snapshot = objectCache.findCurrentObjectSnapshot(objectHandle).orElse(null);
+            List<TriggerProcessor.StagedStatement> statements = List.of();
+            if (snapshot != null) {
+                ObjectDeleteInjectionContext context = new ObjectDeleteInjectionContext(
+                        snapshot.className(),
+                        snapshot.objectHandle(),
+                        snapshot.attributes());
+                statements = triggerProcessor.stage(context);
+            } else {
+                logger.debug("Skipping ObjectDelete triggers for unknown or removed object {}", theObject);
+                return;
+            }
+            objectCache.removeObject(objectHandle);
+            triggerProcessor.enqueue(statements, xapiClient::sendStatement);
         } catch (RuntimeException e) {
             logger.error("Error removing cached object {}", theObject, e);
         }
+    }
+
+    private String rootRelativeObjectClassName(String className) {
+        return className != null && className.startsWith(OBJECT_ROOT_PREFIX)
+                ? className.substring(OBJECT_ROOT_PREFIX.length())
+                : className;
     }
 
     /*
@@ -424,34 +520,22 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
         try {
             String interactionName = ambassador.getInteractionClassName(interactionClass);
             logger.trace("Interaction Handle: {}", interactionName);
-            String interactionKey = StringUtils.substringAfterLast(interactionName, ".");
+            String interactionKey = rootRelativeInteractionClassName(interactionName);
 
             // Create Interaction-specific injection context to pass to trigger processor
             InteractionInjectionContext context = new InteractionInjectionContext(interactionKey,
                     getMapWithParameterNames(interactionClass, theParameters));
 
-            // pass each matching interaction trigger to trigger processor
-            xapiConfig.statementTriggers.stream()
-                    .filter(trigger -> trigger.clazz.equals(interactionKey)
-                            && trigger.type.equals(StatementTrigger.Type.INTERACTION))
-                    .forEach(trigger -> {
-                        logger.trace("Processing trigger for interaction {}", trigger.clazz);
-                        TriggerProcessingResult result = triggerProcessor.processTrigger(trigger, context);
-                        if (result.success() && result.matched()){
-                            try {
-                                xapiClient.sendStatement(result.statement());
-                            } catch (Exception e) {
-                                logger.error("Error parsing or posting statement {}", result.statement(), e);
-                            }
-                        } else if (!result.success()) {
-                            // TODO: DLQ
-                            logger.error("Error processing Interaction: {}", result.error().getMessage(),
-                                result.error());
-                        }
-                    });
+            triggerProcessor.dispatch(context, xapiClient::sendStatement);
         } catch (InvalidInteractionClassHandle | FederateNotExecutionMember | NotConnected | RTIinternalError e) {
             logger.error("Error ascertaining interaction details!", e);
         }
+    }
+
+    private String rootRelativeInteractionClassName(String className) {
+        return className != null && className.startsWith(INTERACTION_ROOT_PREFIX)
+                ? className.substring(INTERACTION_ROOT_PREFIX.length())
+                : className;
     }
 
     private Map<String, byte[]> getMapWithParameterNames(InteractionClassHandle interactionClass,

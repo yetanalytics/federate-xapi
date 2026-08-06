@@ -1,5 +1,6 @@
 package com.yetanalytics.hlaxapi.injection;
 
+import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import java.util.Map;
 
 
@@ -23,4 +24,8 @@ public class InteractionInjectionContext extends InjectionContext {
         this.parameterMap = parameterMap;
     }
 
+    @Override
+    public final StatementTrigger.Type eventType() {
+        return StatementTrigger.Type.INTERACTION;
+    }
 }
