@@ -29,7 +29,7 @@ The application runs on an embedded SQLite database by default but there are oth
 
 #### Queue Config
 
-The application runs on an embedded ActiveMQ Artemis for queueing and decoupling. See the [queue config docs](doc/broker-config.md) for more info.
+The application runs on an embedded ActiveMQ Artemis for queueing and decoupling. See the [queue config docs](doc/queue-config.md) for more info.
 
 ### Vendoring Portico
 
