@@ -2,6 +2,7 @@ package com.yetanalytics.hlaxapi;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import com.yetanalytics.extension.SuppressTestLogging;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.LrsConfig;
@@ -22,10 +23,13 @@ import org.junit.jupiter.api.Test;
 import org.portico.impl.hla1516e.types.HLA1516eHandle;
 import org.portico.impl.hla1516e.types.HLA1516eParameterHandleValueMap;
 import org.portico.impl.hla1516e.types.encoding.HLA1516eEncoderFactory;
+import org.springframework.jms.core.JmsTemplate;
+import org.springframework.transaction.support.TransactionTemplate;
 
 class HlaInteractionDispatchTest {
 
     @Test
+    @SuppressTestLogging({"com.yetanalytics.hlaxapi.HlaInterfaceImpl"})
     void canonicalNestedInteractionsSubscribeAndDispatchIndependently() throws Exception {
         HLADecoderRegistry decoderRegistry =
                 new HLADecoderRegistry(new HLA1516eEncoderFactory());
@@ -163,7 +167,7 @@ class HlaInteractionDispatchTest {
         private final List<String> statements = new ArrayList<>();
 
         private RecordingXapiClient() {
-            super(clientConfig(), new StatementValidator());
+            super(clientConfig(), new StatementValidator(), new JmsTemplate(), new TransactionTemplate());
         }
 
         @Override

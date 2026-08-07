@@ -127,14 +127,51 @@
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
-            <version>6.1.18</version>
+            <version>6.1.21</version>
         </dependency>
         <!-- xAPI Client -->
         <dependency>
             <groupId>com.yetanalytics</groupId>
             <artifactId>xapi-tools</artifactId>
-            <version>0.0.5</version>
+            <version>0.0.7</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>ch.qos.logback</groupId>
+                    <artifactId>logback-classic</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>ch.qos.logback</groupId>
+                    <artifactId>logback-core</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
+        <!-- AMQ-->
+
+        <!-- Core Spring JMS Support -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-jms</artifactId>
+            <version>6.1.21</version>
+        </dependency>
+        <!-- Core ActiveMQ Embedded Broker -->
+
+        <!-- Compiler headers for jakarta (fulfilled by AMQ) -->
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-server</artifactId>
+            <version>2.33.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>artemis-jakarta-client</artifactId>
+            <version>2.33.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j2-impl</artifactId>
+            <version>2.23.1</version>
+        </dependency>
+
     </dependencies>
 
     <build>

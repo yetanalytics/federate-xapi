@@ -1,24 +1,34 @@
 package com.yetanalytics.hlaxapi;
 
-import hla.rti1516e.RtiFactory;
-import hla.rti1516e.RtiFactoryFactory;
-import hla.rti1516e.exceptions.RTIinternalError;
-
 import java.io.IOException;
 
+import org.apache.activemq.artemis.core.config.impl.ConfigurationImpl;
+import org.apache.activemq.artemis.core.server.JournalType;
+import org.apache.activemq.artemis.core.server.embedded.EmbeddedActiveMQ;
+import org.apache.activemq.artemis.jms.client.ActiveMQConnectionFactory;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.jms.connection.CachingConnectionFactory;
+import org.springframework.jms.connection.JmsTransactionManager;
+import org.springframework.jms.core.JmsTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
+import com.yetanalytics.hlaxapi.config.BrokerConfiguration;
 import com.yetanalytics.hlaxapi.config.ConfigParser;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.xapi.util.StatementValidator;
 
+import hla.rti1516e.RtiFactory;
+import hla.rti1516e.RtiFactoryFactory;
 import hla.rti1516e.encoding.EncoderFactory;
+import hla.rti1516e.exceptions.RTIinternalError;
+import jakarta.jms.ConnectionFactory;
 
 
 /**
@@ -86,5 +96,70 @@ public class AppConfig {
             logger.error("Could not read Simulation config: " + path, e);
             throw new RuntimeException(e);
         }
+    }
+
+    /** Broker Stuff */
+
+    public void startEmbeddedArtemisServer() throws Exception {
+        System.setProperty("org.jboss.logging.provider", "slf4j");
+        System.setProperty("java.util.logging.manager", "org.apache.logging.log4j.jul.LogManager");
+        EmbeddedActiveMQ server = new EmbeddedActiveMQ();
+        org.apache.activemq.artemis.core.config.Configuration config = new ConfigurationImpl()
+            .setPersistenceEnabled(false)
+            .setSecurityEnabled(false)
+            .setJournalType(JournalType.NIO)
+            .addAcceptorConfiguration("in-vm", "vm://0");
+        server.setConfiguration(config);
+        server.start();
+    }
+
+    @Bean
+    public ConnectionFactory jmsConnectionFactory() {
+
+        BrokerConfiguration brokerConfig = BrokerConfiguration.from(System.getenv());
+
+        if (brokerConfig.embedded) {
+            try {
+                startEmbeddedArtemisServer();
+            } catch (Exception e) {
+                logger.error("Could not start embedded broker", e);
+                throw new RuntimeException(e);
+            }
+        }
+
+        // Artemis specific Jakarta factory
+        ActiveMQConnectionFactory rawFactory = new ActiveMQConnectionFactory(
+                brokerConfig.brokerUrl,
+                brokerConfig.username,
+                brokerConfig.password
+        );
+        rawFactory.setConsumerWindowSize(0); // strict FIFO
+
+        // Wrap the raw factory to cache connections and sessions
+        CachingConnectionFactory cachingFactory = new CachingConnectionFactory(rawFactory);
+        // Crucial: must be false for variable batch pooling logic to work correctly
+        cachingFactory.setCacheConsumers(false);
+        cachingFactory.setSessionCacheSize(10);
+
+        return cachingFactory;
+    }
+
+    @Bean
+    @SuppressWarnings("null")
+    public JmsTemplate jmsTemplate(ConnectionFactory jmsConnectionFactory) {
+        return new JmsTemplate(jmsConnectionFactory);
+    }
+
+    @Bean
+    @SuppressWarnings("null")
+    public PlatformTransactionManager transactionManager(ConnectionFactory connectionFactory) {
+        // Spring automatically pairs this manager with @Transactional when processing JMS
+        return new JmsTransactionManager(connectionFactory);
+    }
+
+    @Bean
+    @SuppressWarnings("null")
+    public TransactionTemplate transactionTemplate(PlatformTransactionManager transactionManager) {
+        return new TransactionTemplate(transactionManager);
     }
 }

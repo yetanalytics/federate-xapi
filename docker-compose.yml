@@ -48,6 +48,14 @@ services:
       LRSQL_DB_PASSWORD: lrsql_password
       # If Postgres is too slow to start, increase this
       LRSQL_POOL_INITIALIZATION_FAIL_TIMEOUT: 10000
+  amq:
+    image: apache/artemis:latest-alpine
+    environment:
+      - ARTEMIS_USER=admin
+      - ARTEMIS_PASSWORD=admin
+    ports:
+      - "61616:61616"
+      - "8161:8161"
 
 volumes:
   postgres-data:
