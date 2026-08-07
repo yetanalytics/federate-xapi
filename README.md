@@ -41,7 +41,7 @@ The vendoring script intentionally uses a Java-only Portico Ant build file. On L
 
 The build output does not bundle an RTI implementation. The development runtime targets add either the vendored Portico RTI jar or a local Pitch RTI install on the runtime classpath.
 
-You will need to update `config/Simulation.config` with the appropriate federation information, and reference the target federation's appropriate FOM.
+You will need to update `config/Simulation.config` with the appropriate federation information, and reference the file of the target federation's FOM.
 
 To build and run federate once configured:
 
