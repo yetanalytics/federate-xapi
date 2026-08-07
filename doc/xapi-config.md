@@ -592,7 +592,7 @@ Fields:
 - `batch`: Max xAPI Statement batch size passed to the LRS in one POST.
 - `maxRetries`: Number of scheduled retry attempts before the current queue of statements is sent to dead letter queue after repeated LRS post failures.
 
-See the [queue docs](broker-config.md) for more information on statement queue behavior.
+See the [queue docs](queue-config.md) for more information on statement queue behavior.
 
 ### Example LRS
 
