@@ -23,6 +23,7 @@ import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.config.model.ValueExpression;
 import com.yetanalytics.hlaxapi.injection.InjectionContext;
+import com.yetanalytics.hlaxapi.injection.InjectionResolver;
 import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
@@ -38,7 +39,7 @@ import hla.rti1516e.encoding.DecoderException;
  * resolve injection syntaxes like ["trigger", [target]] or ["query", ...].
  */
 @Component
-public class InjectionHandler {
+public class InjectionHandler implements InjectionResolver {
 
     private static final Logger logger = LogManager.getLogger(InjectionHandler.class);
 
@@ -53,6 +54,10 @@ public class InjectionHandler {
 
     @Autowired
     private FomCatalog fomCatalog;
+
+    private FomDataElementFactory dataElementFactory() {
+        return new FomDataElementFactory(fomXml, hlaDecoderRegistry);
+    }
 
     public InjectionHandler() {
     }
@@ -262,7 +267,7 @@ public class InjectionHandler {
         }
 
         for (int i = 0; i <= index; i++) {
-            DataElement element = fomXml.createDataElementForType(elementType);
+            DataElement element = dataElementFactory().create(elementType);
             try {
                 element.decode(wrapper);
             } catch (DecoderException e) {
@@ -291,7 +296,7 @@ public class InjectionHandler {
         }
         ByteWrapper wrapper = new ByteWrapper(bytes);
         for (FOMXML.FixedRecordField field : fields) {
-            DataElement element = fomXml.createDataElementForType(field.dataType);
+            DataElement element = dataElementFactory().create(field.dataType);
             try {
                 element.decode(wrapper);
             } catch (DecoderException e) {

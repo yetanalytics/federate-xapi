@@ -45,7 +45,7 @@ import hla.rti1516e.encoding.HLAvariableArray;
  * <p>This class is not thread-safe. If registrations may occur concurrently with decoding,
  * synchronize access externally.</p>
  */
-public class HLADecoderRegistry {
+public class HLADecoderRegistry implements HlaTypeRegistry {
 
     private EncoderFactory encoderFactory;
     private Map<String, RegisteredDecoder> decoders = new LinkedHashMap<String, RegisteredDecoder>();
@@ -115,6 +115,7 @@ public class HLADecoderRegistry {
         return Collections.unmodifiableSet(decoders.keySet());
     }
 
+    @Override
     public boolean supports(String hlaType) {
         return decoders.containsKey(normalize(hlaType));
     }
@@ -123,6 +124,7 @@ public class HLADecoderRegistry {
         return registeredDecoderFor(hlaType).decoder();
     }
 
+    @Override
     public Class<?> getClassForType(String hlaType) {
         return registeredDecoderFor(hlaType).javaType();
     }

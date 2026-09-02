@@ -24,6 +24,7 @@ import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.StatementTrigger;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.injection.InjectionContext;
+import com.yetanalytics.hlaxapi.injection.InjectionResolver;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.InjectionOptions;
@@ -41,7 +42,7 @@ public class TriggerProcessor {
     private static final Logger logger = LogManager.getLogger(TriggerProcessor.class);
 
     @Autowired
-    private InjectionHandler injectionHandler;
+    private InjectionResolver injectionHandler;
 
     @Autowired
     private XapiConfig xapiConfig;
@@ -53,14 +54,14 @@ public class TriggerProcessor {
     }
 
     // For tests and non-Spring code, allow injection of a custom InjectionHandler
-    public TriggerProcessor(InjectionHandler injectionHandler) {
+    public TriggerProcessor(InjectionResolver injectionHandler) {
         this.injectionHandler = injectionHandler;
     }
 
     // For tests and non-Spring code that exercise trigger dispatch.
     public TriggerProcessor(
             XapiConfig xapiConfig,
-            InjectionHandler injectionHandler,
+            InjectionResolver injectionHandler,
             FomCatalog fomCatalog) {
         this.xapiConfig = xapiConfig;
         this.injectionHandler = injectionHandler;

@@ -9,14 +9,15 @@ import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.config.model.TriggerExpression;
 import com.yetanalytics.hlaxapi.criteria.CriteriaEvaluator;
 import com.yetanalytics.hlaxapi.injection.InjectionContext;
+import com.yetanalytics.hlaxapi.injection.InjectionResolver;
 
 /** Evaluates a statement trigger's expression against its runtime value sources. */
 final class TriggerCriteriaMatcher {
 
-    private final InjectionHandler handler;
+    private final InjectionResolver handler;
     private final CriteriaEvaluator evaluator = new CriteriaEvaluator();
 
-    TriggerCriteriaMatcher(InjectionHandler handler) {
+    TriggerCriteriaMatcher(InjectionResolver handler) {
         this.handler = handler;
     }
 
