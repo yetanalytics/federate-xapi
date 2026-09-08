@@ -280,6 +280,36 @@ public class FOMXML {
         return List.copyOf(definitions);
     }
 
+    /** Returns the FOM model name and version when declared. */
+    public ModelIdentification modelIdentification() {
+        if (doc == null || doc.getDocumentElement() == null) {
+            return null;
+        }
+        Element identification = firstChildElement(doc.getDocumentElement(), "modelIdentification");
+        if (identification == null) {
+            return null;
+        }
+        String name = childText(identification, "name");
+        String version = childText(identification, "version");
+        return name == null && version == null ? null : new ModelIdentification(name, version);
+    }
+
+    /** Return the interaction-class hierarchy as immutable, XML-free definitions. */
+    public List<InteractionClassDefinition> interactionClassDefinitions() {
+        if (doc == null || doc.getDocumentElement() == null) {
+            return List.of();
+        }
+        Element interactions = firstChildElement(doc.getDocumentElement(), "interactions");
+        if (interactions == null) {
+            return List.of();
+        }
+        List<InteractionClassDefinition> definitions = new ArrayList<>();
+        for (Element interactionClass : childElements(interactions, "interactionClass")) {
+            collectInteractionClassDefinitions(interactionClass, null, definitions);
+        }
+        return List.copyOf(definitions);
+    }
+
     private void collectObjectClassDefinitions(
             Element objectClass,
             String parentName,
@@ -304,6 +334,31 @@ public class FOMXML {
 
         for (Element childClass : childElements(objectClass, "objectClass")) {
             collectObjectClassDefinitions(childClass, canonicalName, definitions);
+        }
+    }
+
+    private void collectInteractionClassDefinitions(
+            Element interactionClass,
+            String parentName,
+            List<InteractionClassDefinition> definitions) {
+        String className = childText(interactionClass, "name");
+        if (className == null) {
+            return;
+        }
+        String canonicalName = parentName == null || parentName.equals("HLAinteractionRoot")
+                ? className
+                : parentName + "." + className;
+        List<InteractionParameterDefinition> parameters = new ArrayList<>();
+        for (Element parameter : childElements(interactionClass, "parameter")) {
+            String parameterName = childText(parameter, "name");
+            String dataType = childText(parameter, "dataType");
+            if (parameterName != null && dataType != null) {
+                parameters.add(new InteractionParameterDefinition(parameterName, dataType));
+            }
+        }
+        definitions.add(new InteractionClassDefinition(canonicalName, parentName, parameters));
+        for (Element childClass : childElements(interactionClass, "interactionClass")) {
+            collectInteractionClassDefinitions(childClass, canonicalName, definitions);
         }
     }
 
@@ -453,5 +508,21 @@ public class FOMXML {
     }
 
     public record ObjectAttributeDefinition(String name, String dataType) {
+    }
+
+    public record ModelIdentification(String name, String version) {
+    }
+
+    public record InteractionClassDefinition(
+            String name,
+            String parentName,
+            List<InteractionParameterDefinition> parameters) {
+
+        public InteractionClassDefinition {
+            parameters = List.copyOf(parameters);
+        }
+    }
+
+    public record InteractionParameterDefinition(String name, String dataType) {
     }
 }
