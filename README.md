@@ -59,6 +59,20 @@ PITCH_RTI_LIB="/path/to/prti1516e/lib/*" \
 make run-dev-pitch
 ```
 
+### Validation Server
+
+The stateless validation API runs without an RTI, federation, database, broker,
+or LRS connection:
+
+```shell
+mvn package
+make run-validator
+```
+
+It listens on `127.0.0.1:8081` by default. See the
+[validation service documentation](doc/validation-api.md) for endpoints,
+generated API documentation, runtime settings, and a sample request.
+
 ### Development Checks
 
 Use Maven's `verify` lifecycle before opening a PR:

@@ -1,0 +1,174 @@
+{
+    "valid": true,
+    "complete": true,
+    "apiVersion": "v1",
+    "validatorVersion": "1.0-SNAPSHOT",
+    "configVersion": "1.0",
+    "supportedConfigVersions": [
+        "1.0"
+    ],
+    "fom": {
+        "valid": true,
+        "catalog": {
+            "model": {
+                "name": "Validator Fixture",
+                "version": "1.0"
+            },
+            "objectClasses": [
+                {
+                    "name": "BaseEntity",
+                    "localName": "BaseEntity",
+                    "parentName": "HLAobjectRoot",
+                    "attributes": [
+                        {
+                            "name": "EntityId",
+                            "declaredOn": "BaseEntity",
+                            "dataType": "HLAASCIIstring",
+                            "targets": [
+                                {
+                                    "path": [
+                                        "EntityId"
+                                    ],
+                                    "pathText": "EntityId",
+                                    "dataType": "HLAASCIIstring",
+                                    "primitiveType": "HLAASCIIstring",
+                                    "valueType": "string",
+                                    "leaf": true
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "name": "BaseEntity.TrackedEntity",
+                    "localName": "TrackedEntity",
+                    "parentName": "BaseEntity",
+                    "attributes": [
+                        {
+                            "name": "EntityId",
+                            "declaredOn": "BaseEntity",
+                            "dataType": "HLAASCIIstring",
+                            "targets": [
+                                {
+                                    "path": [
+                                        "EntityId"
+                                    ],
+                                    "pathText": "EntityId",
+                                    "dataType": "HLAASCIIstring",
+                                    "primitiveType": "HLAASCIIstring",
+                                    "valueType": "string",
+                                    "leaf": true
+                                }
+                            ]
+                        },
+                        {
+                            "name": "Count",
+                            "declaredOn": "BaseEntity.TrackedEntity",
+                            "dataType": "HLAinteger32BE",
+                            "targets": [
+                                {
+                                    "path": [
+                                        "Count"
+                                    ],
+                                    "pathText": "Count",
+                                    "dataType": "HLAinteger32BE",
+                                    "primitiveType": "HLAinteger32BE",
+                                    "valueType": "number",
+                                    "leaf": true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "interactionClasses": [
+                {
+                    "name": "StepCompleted",
+                    "localName": "StepCompleted",
+                    "parentName": "HLAinteractionRoot",
+                    "parameters": [
+                        {
+                            "name": "StepNumber",
+                            "declaredOn": "StepCompleted",
+                            "dataType": "HLAinteger32BE",
+                            "targets": [
+                                {
+                                    "path": [
+                                        "StepNumber"
+                                    ],
+                                    "pathText": "StepNumber",
+                                    "dataType": "HLAinteger32BE",
+                                    "primitiveType": "HLAinteger32BE",
+                                    "valueType": "number",
+                                    "leaf": true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "diagnostics": [],
+    "triggers": [
+        {
+            "index": 0,
+            "valid": true,
+            "complete": true,
+            "diagnostics": [],
+            "renderedStatement": {
+                "actor": {
+                    "objectType": "Agent",
+                    "account": {
+                        "homePage": "https://example.com/agents",
+                        "name": "validator"
+                    }
+                },
+                "verb": {
+                    "id": "https://example.com/verbs/observed",
+                    "display": {
+                        "en-US": "observed"
+                    }
+                },
+                "object": {
+                    "objectType": "Activity",
+                    "id": "https://example.com/activities/entity"
+                },
+                "context": {
+                    "extensions": {
+                        "https://example.com/extensions/count": 0.5
+                    }
+                }
+            }
+        }
+    ],
+    "subscriptions": {
+        "cacheInferred": [],
+        "eventInferred": [
+            {
+                "class": "BaseEntity.TrackedEntity",
+                "attributes": [
+                    "Count",
+                    "EntityId"
+                ]
+            }
+        ],
+        "explicit": [
+            {
+                "class": "BaseEntity.TrackedEntity",
+                "attributes": [
+                    "EntityId"
+                ]
+            }
+        ],
+        "effective": [
+            {
+                "class": "BaseEntity.TrackedEntity",
+                "attributes": [
+                    "Count",
+                    "EntityId"
+                ]
+            }
+        ]
+    }
+}

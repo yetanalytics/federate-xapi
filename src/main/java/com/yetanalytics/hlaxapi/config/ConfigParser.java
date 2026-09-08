@@ -32,6 +32,10 @@ public class ConfigParser {
         this.root = mapper.readTree(f);
     }
 
+    private ConfigParser(JsonNode root) {
+        this.root = root;
+    }
+
     public static ConfigParser fromEnvOrDefault() throws IOException {
         String path = System.getenv().getOrDefault("XAPI_CONFIG", "config/xapi-config.json");
         return ConfigParser.fromFile(path);
@@ -41,8 +45,21 @@ public class ConfigParser {
         return new ConfigParser(path);
     }
 
+    public static ConfigParser fromJson(String json) throws JsonProcessingException {
+        ObjectMapper mapper = new ObjectMapper();
+        return new ConfigParser(mapper.readTree(json));
+    }
+
     public XapiConfig parse() {
         XapiConfig cfg = new XapiConfig();
+
+        JsonNode version = root.get("configVersion");
+        if (version != null) {
+            if (!version.isTextual()) {
+                throw new IllegalArgumentException("configVersion must be a string");
+            }
+            cfg.configVersion = ConfigVersions.requireSupported(version.asText());
+        }
 
         // statementTriggers
         JsonNode st = root.get("statementTriggers");

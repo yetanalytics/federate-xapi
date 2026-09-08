@@ -86,6 +86,12 @@ public class XapiValueGenerator {
             return DEFAULT_SHA1;
         }
 
+        if (hlaJavaType != null && NUMERIC_CLASSES.contains(hlaJavaType)) {
+            return DEFAULT_NUMERIC;
+        }
+        if (hlaJavaType != null && BOOLEAN_CLASSES.contains(hlaJavaType)) {
+            return DEFAULT_BOOLEAN;
+        }
         return randomString();
     }
 
