@@ -21,6 +21,8 @@ import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.PreviousInjec
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.QueryInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.StatementInjection;
 import com.yetanalytics.hlaxapi.injection.StatementInjectionParser.TriggerInjection;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 
@@ -54,51 +56,64 @@ public class FomConfigValidator {
             return;
         }
         try {
-            validateStatementNode(mapper.readTree(trigger.statement), eventSource);
+            validateStatementNode(mapper.readTree(trigger.statement), eventSource, List.of());
         } catch (JsonProcessingException ignored) {
             // Statement parsing failures remain the responsibility of the
             // existing template-rendering validation pass.
         }
     }
 
-    private void validateStatementNode(JsonNode node, ValidationSource source) {
+    private void validateStatementNode(JsonNode node, ValidationSource source, List<Object> path) {
         if (node == null || node.isNull()) {
             return;
         }
         if (node.isObject()) {
-            for (JsonNode child : node) {
-                validateStatementNode(child, source);
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                validateStatementNode(field.getValue(), source, append(path, field.getKey()));
             }
             return;
         }
         if (node.isArray()) {
             ParseResult parsed = StatementInjectionParser.parse(node);
             if (parsed.valid()) {
-                validateInjection(parsed.injection(), source);
+                validateInjectionAtPath(parsed.injection(), source, path);
                 return;
             }
             if (parsed.recognized()) {
                 return;
             }
-            for (JsonNode child : node) {
-                validateStatementNode(child, source);
+            for (int index = 0; index < node.size(); index++) {
+                validateStatementNode(node.get(index), source, append(path, index));
             }
             return;
         }
         if (node.isTextual()) {
-            validateInlineInjections(node.asText(), source);
+            validateInlineInjections(node.asText(), source, path);
         }
     }
 
-    private void validateInlineInjections(String text, ValidationSource source) {
+    private void validateInlineInjections(String text, ValidationSource source, List<Object> path) {
         for (InlineInjection inline : StatementInjectionParser.findInline(text)) {
             if (inline.result().valid()) {
-                validateInjection(inline.result().injection(), source);
+                validateInjectionAtPath(inline.result().injection(), source, path);
                 return;
             }
             if (inline.result().recognized()) {
                 return;
             }
+        }
+    }
+
+    private void validateInjectionAtPath(
+            StatementInjection injection,
+            ValidationSource source,
+            List<Object> path) {
+        try {
+            validateInjection(injection, source);
+        } catch (IllegalArgumentException e) {
+            throw new FomReferenceException(pointer(path), e.getMessage(), e);
         }
     }
 
@@ -248,5 +263,33 @@ public class FomConfigValidator {
             StatementTrigger trigger,
             Map<String, ObjectLookup> lookups,
             String cacheClass) {
+    }
+
+    private static List<Object> append(List<Object> path, Object part) {
+        java.util.ArrayList<Object> result = new java.util.ArrayList<>(path);
+        result.add(part);
+        return List.copyOf(result);
+    }
+
+    private static String pointer(List<Object> path) {
+        StringBuilder pointer = new StringBuilder();
+        for (Object part : path) {
+            pointer.append('/').append(part.toString().replace("~", "~0").replace("/", "~1"));
+        }
+        return pointer.toString();
+    }
+
+    public static final class FomReferenceException extends IllegalArgumentException {
+
+        private final String statementPointer;
+
+        public FomReferenceException(String statementPointer, String message, Throwable cause) {
+            super(message, cause);
+            this.statementPointer = statementPointer;
+        }
+
+        public String statementPointer() {
+            return statementPointer;
+        }
     }
 }

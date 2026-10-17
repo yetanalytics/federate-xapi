@@ -35,6 +35,7 @@ import com.yetanalytics.hlaxapi.TriggerProcessor;
 import com.yetanalytics.hlaxapi.cache.CachedObject;
 import com.yetanalytics.hlaxapi.cache.ValueResolution;
 import com.yetanalytics.hlaxapi.config.ConfigParser;
+import com.yetanalytics.hlaxapi.config.ConfigVersions;
 import com.yetanalytics.hlaxapi.config.XapiConfig;
 import com.yetanalytics.hlaxapi.config.model.ComparisonOperator;
 import com.yetanalytics.hlaxapi.config.model.Criterion;
@@ -57,6 +58,21 @@ public class ConfigParserTest {
     private static final Logger logger = LogManager.getLogger(ConfigParserTest.class);
 
     final static String CONFIG_STATEMENT_RESULT = "{\"actor\":{\"objectType\":\"Agent\",\"name\":\"c5988e0e-c521-4ff7-ba83-df1a63eb72bf\",\"account\":{\"homePage\":\"https://homepage.system.io\",\"name\":\"Mr. c5988e0e-c521-4ff7-ba83-df1a63eb72bf\"}},\"context\":{\"extensions\":{\"https://yetanalytics.com/extensions/from-x\":4,\"https://yetanalytics.com/extensions/from-y\":12}},\"result\":{\"response\":\"[5, 13]\"}}";
+
+    @Test
+    public void parsesAndValidatesConfigVersionFromMemory() throws IOException {
+        XapiConfig current = ConfigParser.fromJson("{\"configVersion\":\"1.0\"}").parse();
+        XapiConfig legacy = ConfigParser.fromJson("{}").parse();
+
+        assertEquals(ConfigVersions.CURRENT, current.configVersion);
+        assertEquals(ConfigVersions.CURRENT, legacy.configVersion);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ConfigParser.fromJson("{\"configVersion\":\"2.0\"}").parse());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ConfigParser.fromJson("{\"configVersion\":1}").parse());
+    }
 
     @Test
     public void parsesConfigFile() throws IOException {

@@ -1,7 +1,11 @@
 package com.yetanalytics;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -14,6 +18,7 @@ import com.yetanalytics.hlaxapi.FOMXML;
 import com.yetanalytics.hlaxapi.FOMXML.PathCheckResult;
 import com.yetanalytics.hlaxapi.HLADecoderRegistry;
 import com.yetanalytics.hlaxapi.SimulationConfig;
+import com.yetanalytics.hlaxapi.StandardHlaTypeRegistry;
 
 /**
  * Tests for FOM Parsing.
@@ -26,6 +31,24 @@ public class FOMTest {
     @BeforeEach
     public void setUp() {
         fomXml = fomXml("config/HlaFedereplFOM.xml");
+    }
+
+    @Test
+    void parsesFomFromMemoryAndRejectsDoctypes() throws Exception {
+        StandardHlaTypeRegistry typeRegistry = new StandardHlaTypeRegistry();
+        String xml = Files.readString(Path.of("config/HlaFedereplFOM.xml"));
+
+        FOMXML inMemoryFom = FOMXML.fromXml(xml, typeRegistry);
+
+        assertEquals(
+                "StepCount",
+                inMemoryFom.checkInteractionParameterPath("StepCompleted", "StepNumber").resolvedType);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> FOMXML.fromXml("""
+                        <!DOCTYPE objectModel [<!ENTITY external SYSTEM \"file:///etc/passwd\">]>
+                        <objectModel><notes>&external;</notes></objectModel>
+                        """, typeRegistry));
     }
 
     @Test

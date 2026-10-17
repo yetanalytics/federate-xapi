@@ -12,11 +12,18 @@ At the top level the file supports:
 
 ```json
 {
+  "configVersion": "1.0",
   "statementTriggers": [],
   "lrs": {},
   "objectCache": {}
 }
 ```
+
+`configVersion` identifies the configuration document contract. Version `1.0` is
+the current version. For backward compatibility, a missing version is currently
+read as `1.0`; new and edited configurations should always include the field.
+An explicitly unsupported version prevents startup rather than being interpreted
+as the current format.
 
 ## Statement Triggers
 
@@ -606,6 +613,7 @@ docker compose up lrs
 
 ```json
 {
+  "configVersion": "1.0",
   "statementTriggers": [
     {
       "type": "Interaction",

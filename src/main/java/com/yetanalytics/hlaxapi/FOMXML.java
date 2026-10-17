@@ -16,15 +16,14 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
-
-import hla.rti1516e.encoding.DataElement;
-import hla.rti1516e.encoding.DataElementFactory;
-import hla.rti1516e.encoding.HLAfixedRecord;
-import hla.rti1516e.encoding.HLAvariableArray;
+import org.xml.sax.SAXParseException;
+import org.xml.sax.helpers.DefaultHandler;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -37,32 +36,80 @@ public class FOMXML {
 
     private Document doc;
     private XPath xPath;
-    private HLADecoderRegistry decoderRegistry;
+    private HlaTypeRegistry typeRegistry;
 
     //automatically injected by spring
-    public FOMXML(SimulationConfig simConfig, HLADecoderRegistry decoderRegistry) {
-        File xmlFile = new File(simConfig.getFom());
+    public FOMXML(SimulationConfig simConfig, HlaTypeRegistry typeRegistry) {
+        this(parse(new File(simConfig.getFom())), typeRegistry);
+    }
+
+    private FOMXML(Document doc, HlaTypeRegistry typeRegistry) {
+        this.doc = doc;
+        this.xPath = XPathFactory.newInstance().newXPath();
+        this.typeRegistry = typeRegistry;
+    }
+
+    /** Parses an in-memory FOM for validator-only and API use. */
+    public static FOMXML fromXml(String xml, HlaTypeRegistry typeRegistry) {
+        if (xml == null || xml.isBlank()) {
+            throw new IllegalArgumentException("FOM XML must not be blank");
+        }
+        return new FOMXML(parse(new InputSource(new StringReader(xml))), typeRegistry);
+    }
+
+    private static DocumentBuilderFactory documentBuilderFactory() {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(false);
+        factory.setXIncludeAware(false);
+        factory.setExpandEntityReferences(false);
 
         try {
-            DocumentBuilder builder = factory.newDocumentBuilder();
-            doc = builder.parse(xmlFile);
-        } catch (SAXException | IOException | ParserConfigurationException e) {
-            logger.error("Could not parse FOM XML.", e);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+        } catch (ParserConfigurationException e) {
+            throw new IllegalStateException("XML parser does not support secure FOM parsing", e);
         }
+        return factory;
+    }
 
-        xPath = XPathFactory.newInstance().newXPath();
-        this.decoderRegistry = decoderRegistry;
+    private static Document parse(File xmlFile) {
+        try {
+            DocumentBuilder builder = documentBuilder();
+            return builder.parse(xmlFile);
+        } catch (SAXException | IOException | ParserConfigurationException e) {
+            throw new IllegalArgumentException("Could not parse FOM XML", e);
+        }
+    }
+
+    private static Document parse(InputSource source) {
+        try {
+            DocumentBuilder builder = documentBuilder();
+            return builder.parse(source);
+        } catch (SAXException | IOException | ParserConfigurationException e) {
+            throw new IllegalArgumentException("Could not parse FOM XML", e);
+        }
+    }
+
+    private static DocumentBuilder documentBuilder() throws ParserConfigurationException {
+        DocumentBuilder builder = documentBuilderFactory().newDocumentBuilder();
+        builder.setErrorHandler(new DefaultHandler() {
+            @Override
+            public void error(SAXParseException e) throws SAXException {
+                throw e;
+            }
+
+            @Override
+            public void fatalError(SAXParseException e) throws SAXException {
+                throw e;
+            }
+        });
+        return builder;
     }
 
     private boolean isPrim(String type) {
-        try {
-            decoderRegistry.decoderFor(type);
-            return true;
-        } catch (IllegalArgumentException e) {
-            return false;
-        }
+        return typeRegistry.supports(type);
     }
 
     /**
@@ -207,14 +254,6 @@ public class FOMXML {
         return null;
     }
 
-    public HLADecoderRegistry getDecoderRegistry() {
-        return decoderRegistry;
-    }
-
-    public void setDecoderRegistry(HLADecoderRegistry decoderRegistry) {
-        this.decoderRegistry = decoderRegistry;
-    }
-
     /**
      * Return the object-class hierarchy as immutable, XML-free definitions.
      *
@@ -237,6 +276,36 @@ public class FOMXML {
         List<ObjectClassDefinition> definitions = new ArrayList<>();
         for (Element objectClass : childElements(objects, "objectClass")) {
             collectObjectClassDefinitions(objectClass, null, definitions);
+        }
+        return List.copyOf(definitions);
+    }
+
+    /** Returns the FOM model name and version when declared. */
+    public ModelIdentification modelIdentification() {
+        if (doc == null || doc.getDocumentElement() == null) {
+            return null;
+        }
+        Element identification = firstChildElement(doc.getDocumentElement(), "modelIdentification");
+        if (identification == null) {
+            return null;
+        }
+        String name = childText(identification, "name");
+        String version = childText(identification, "version");
+        return name == null && version == null ? null : new ModelIdentification(name, version);
+    }
+
+    /** Return the interaction-class hierarchy as immutable, XML-free definitions. */
+    public List<InteractionClassDefinition> interactionClassDefinitions() {
+        if (doc == null || doc.getDocumentElement() == null) {
+            return List.of();
+        }
+        Element interactions = firstChildElement(doc.getDocumentElement(), "interactions");
+        if (interactions == null) {
+            return List.of();
+        }
+        List<InteractionClassDefinition> definitions = new ArrayList<>();
+        for (Element interactionClass : childElements(interactions, "interactionClass")) {
+            collectInteractionClassDefinitions(interactionClass, null, definitions);
         }
         return List.copyOf(definitions);
     }
@@ -265,6 +334,31 @@ public class FOMXML {
 
         for (Element childClass : childElements(objectClass, "objectClass")) {
             collectObjectClassDefinitions(childClass, canonicalName, definitions);
+        }
+    }
+
+    private void collectInteractionClassDefinitions(
+            Element interactionClass,
+            String parentName,
+            List<InteractionClassDefinition> definitions) {
+        String className = childText(interactionClass, "name");
+        if (className == null) {
+            return;
+        }
+        String canonicalName = parentName == null || parentName.equals("HLAinteractionRoot")
+                ? className
+                : parentName + "." + className;
+        List<InteractionParameterDefinition> parameters = new ArrayList<>();
+        for (Element parameter : childElements(interactionClass, "parameter")) {
+            String parameterName = childText(parameter, "name");
+            String dataType = childText(parameter, "dataType");
+            if (parameterName != null && dataType != null) {
+                parameters.add(new InteractionParameterDefinition(parameterName, dataType));
+            }
+        }
+        definitions.add(new InteractionClassDefinition(canonicalName, parentName, parameters));
+        for (Element childClass : childElements(interactionClass, "interactionClass")) {
+            collectInteractionClassDefinitions(childClass, canonicalName, definitions);
         }
     }
 
@@ -393,41 +487,6 @@ public class FOMXML {
         return fields;
     }
 
-    public DataElement createDataElementForType(String typeName) {
-        try {
-            String hlaType = getRawType(typeName);
-            if (hlaType != null) {
-                return decoderRegistry.createElement(hlaType);
-            }
-            if (isFixedRecordType(typeName)) {
-                return createFixedRecordElement(typeName);
-            }
-            if (isArrayType(typeName)) {
-                return createArrayElement(typeName);
-            }
-            throw new IllegalArgumentException("Unsupported data type: " + typeName);
-        } catch (XPathExpressionException e) {
-            throw new IllegalStateException("Failed to resolve HLA type for " + typeName, e);
-        }
-    }
-
-    private HLAfixedRecord createFixedRecordElement(String fixedRecordType) throws XPathExpressionException {
-        HLAfixedRecord record = decoderRegistry.getEncoderFactory().createHLAfixedRecord();
-        for (FOMXML.FixedRecordField field : getFixedRecordFields(fixedRecordType)) {
-            record.add(createDataElementForType(field.dataType));
-        }
-        return record;
-    }
-
-    private HLAvariableArray<DataElement> createArrayElement(String arrayType) throws XPathExpressionException {
-        String elementType = getArrayElementType(arrayType);
-        if (elementType == null || elementType.isEmpty()) {
-            throw new IllegalArgumentException("Unknown array element type for " + arrayType);
-        }
-        DataElementFactory<DataElement> factory = index -> createDataElementForType(elementType);
-        return decoderRegistry.getEncoderFactory().createHLAvariableArray(factory);
-    }
-
     public static final class FixedRecordField {
         public final String name;
         public final String dataType;
@@ -449,5 +508,21 @@ public class FOMXML {
     }
 
     public record ObjectAttributeDefinition(String name, String dataType) {
+    }
+
+    public record ModelIdentification(String name, String version) {
+    }
+
+    public record InteractionClassDefinition(
+            String name,
+            String parentName,
+            List<InteractionParameterDefinition> parameters) {
+
+        public InteractionClassDefinition {
+            parameters = List.copyOf(parameters);
+        }
+    }
+
+    public record InteractionParameterDefinition(String name, String dataType) {
     }
 }

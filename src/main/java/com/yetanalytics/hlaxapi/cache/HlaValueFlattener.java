@@ -1,6 +1,7 @@
 package com.yetanalytics.hlaxapi.cache;
 
 import com.yetanalytics.hlaxapi.FOMXML;
+import com.yetanalytics.hlaxapi.FomDataElementFactory;
 import com.yetanalytics.hlaxapi.HLADecoderRegistry;
 import hla.rti1516e.encoding.DataElement;
 import hla.rti1516e.encoding.DecoderException;
@@ -18,10 +19,12 @@ public class HlaValueFlattener {
 
     private final FOMXML fomXml;
     private final HLADecoderRegistry decoderRegistry;
+    private final FomDataElementFactory dataElementFactory;
 
     public HlaValueFlattener(FOMXML fomXml, HLADecoderRegistry decoderRegistry) {
         this.fomXml = Objects.requireNonNull(fomXml, "fomXml");
         this.decoderRegistry = Objects.requireNonNull(decoderRegistry, "decoderRegistry");
+        this.dataElementFactory = new FomDataElementFactory(fomXml, decoderRegistry);
     }
 
     public List<DecodedAttributeValue> flatten(String attributeName, String dataType, byte[] bytes) {
@@ -29,7 +32,7 @@ public class HlaValueFlattener {
         Objects.requireNonNull(dataType, "dataType");
         Objects.requireNonNull(bytes, "bytes");
         try {
-            DataElement element = fomXml.createDataElementForType(dataType);
+            DataElement element = dataElementFactory.create(dataType);
             element.decode(bytes);
             List<DecodedAttributeValue> values = new ArrayList<>();
             Object value = extractValue(attributeName, dataType, element, values);

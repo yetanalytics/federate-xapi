@@ -14,6 +14,7 @@ import static com.yetanalytics.hlaxapi.HLAEncodingTestSupport.variableBytes;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteOrder;
 import java.util.List;
@@ -29,6 +30,16 @@ import hla.rti1516e.encoding.DecoderException;
 class HLADecoderRegistryTest {
 
     private final HLADecoderRegistry registry = new HLADecoderRegistry(testEncoderFactory());
+
+    @Test
+    void validatorMetadataMatchesRuntimeDecoderTypes() {
+        StandardHlaTypeRegistry metadata = new StandardHlaTypeRegistry();
+
+        for (String hlaType : registry.supportedTypes()) {
+            assertTrue(metadata.supports(hlaType), hlaType);
+            assertEquals(registry.getClassForType(hlaType), metadata.getClassForType(hlaType), hlaType);
+        }
+    }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("builtInDecodings")

@@ -1,4 +1,4 @@
-.PHONY: clean build format lint run-dev run-dev-pitch run-rti test verify clean-vendor refresh run-debug-portico
+.PHONY: clean build format lint run-dev run-dev-pitch run-rti run-validator test verify clean-vendor refresh run-debug-portico
 
 APP_JAR := target/hla-xapi-1.0-SNAPSHOT.jar
 PORTICO_REPO_URL ?= https://github.com/yetanalytics/portico.git
@@ -46,3 +46,6 @@ run-dev-pitch:
 
 run-rti:
 	java -cp "$(APP_JAR):$(PORTICO_JAR)" org.portico2.rti.Main --rid $(RTI_RID) $(RTI_ARGS)
+
+run-validator:
+	java -jar $(APP_JAR) validate-server

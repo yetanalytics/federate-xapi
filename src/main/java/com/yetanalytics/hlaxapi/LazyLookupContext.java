@@ -5,6 +5,7 @@ import com.yetanalytics.hlaxapi.cache.ValueResolution;
 import com.yetanalytics.hlaxapi.config.model.ObjectLookup;
 import com.yetanalytics.hlaxapi.config.model.Target;
 import com.yetanalytics.hlaxapi.injection.InjectionContext;
+import com.yetanalytics.hlaxapi.injection.InjectionResolver;
 import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import java.util.HashMap;
 import java.util.Map;
@@ -13,13 +14,13 @@ import java.util.Optional;
 /** Holds lookup results that are scoped to one statement-trigger attempt. */
 final class LazyLookupContext {
 
-    private final InjectionHandler handler;
+    private final InjectionResolver handler;
     private final InjectionContext injectionContext;
     private final Map<String, ObjectLookup> definitions;
     private final Map<String, Optional<CachedObject>> objects = new HashMap<>();
 
     LazyLookupContext(
-            InjectionHandler handler,
+            InjectionResolver handler,
             InjectionContext injectionContext,
             Map<String, ObjectLookup> definitions) {
         this.handler = handler;

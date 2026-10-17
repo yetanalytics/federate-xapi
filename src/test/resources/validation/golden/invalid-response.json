@@ -1,0 +1,98 @@
+{
+    "valid": false,
+    "complete": false,
+    "apiVersion": "v1",
+    "validatorVersion": "1.0-SNAPSHOT",
+    "configVersion": "1.0",
+    "supportedConfigVersions": [
+        "1.0"
+    ],
+    "fom": {
+        "valid": true,
+        "catalog": {
+            "objectClasses": [
+                {
+                    "name": "World",
+                    "localName": "World",
+                    "parentName": "HLAobjectRoot",
+                    "attributes": [
+                        {
+                            "name": "StepNumber",
+                            "declaredOn": "World",
+                            "dataType": "HLAinteger32BE",
+                            "targets": [
+                                {
+                                    "path": [
+                                        "StepNumber"
+                                    ],
+                                    "pathText": "StepNumber",
+                                    "dataType": "HLAinteger32BE",
+                                    "primitiveType": "HLAinteger32BE",
+                                    "valueType": "number",
+                                    "leaf": true
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "interactionClasses": []
+        }
+    },
+    "diagnostics": [
+        {
+            "severity": "error",
+            "code": "FOM_TARGET_NOT_FOUND",
+            "stage": "injection",
+            "path": "/statementTriggers/0/statement/object/id",
+            "triggerIndex": 0,
+            "message": "trigger target [MissingId] does not exist on FOM class World"
+        },
+        {
+            "severity": "error",
+            "code": "FOM_CLASS_NOT_FOUND",
+            "stage": "fom",
+            "path": "/statementTriggers/1/class",
+            "triggerIndex": 1,
+            "message": "Object class MissingClass does not exist in the FOM"
+        }
+    ],
+    "triggers": [
+        {
+            "index": 0,
+            "valid": false,
+            "complete": false,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "FOM_TARGET_NOT_FOUND",
+                    "stage": "injection",
+                    "path": "/statementTriggers/0/statement/object/id",
+                    "triggerIndex": 0,
+                    "message": "trigger target [MissingId] does not exist on FOM class World"
+                }
+            ]
+        },
+        {
+            "index": 1,
+            "valid": false,
+            "complete": false,
+            "diagnostics": [
+                {
+                    "severity": "error",
+                    "code": "FOM_CLASS_NOT_FOUND",
+                    "stage": "fom",
+                    "path": "/statementTriggers/1/class",
+                    "triggerIndex": 1,
+                    "message": "Object class MissingClass does not exist in the FOM"
+                }
+            ]
+        }
+    ],
+    "subscriptions": {
+        "cacheInferred": [],
+        "eventInferred": [],
+        "explicit": [],
+        "effective": []
+    }
+}

@@ -15,7 +15,6 @@ import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import com.yetanalytics.hlaxapi.TriggerProcessor.TriggerProcessingResult;
 import com.yetanalytics.hlaxapi.cache.FomCatalog;
 import com.yetanalytics.hlaxapi.cache.ObjectCache;
 import com.yetanalytics.hlaxapi.cache.ObjectSnapshot;
@@ -26,9 +25,7 @@ import com.yetanalytics.hlaxapi.injection.InteractionInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectCreateInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectDeleteInjectionContext;
 import com.yetanalytics.hlaxapi.injection.ObjectUpdateInjectionContext;
-import com.yetanalytics.hlaxapi.injection.TestInjectionContext;
 import com.yetanalytics.xapi.util.StatementValidator;
-import com.yetanalytics.xapi.util.StatementValidator.StatementValidationResult;
 
 import hla.rti1516e.AttributeHandle;
 import hla.rti1516e.AttributeHandleSet;
@@ -202,26 +199,11 @@ public class HlaInterfaceImpl extends NullFederateAmbassador implements HlaInter
 
     public void validateConfig() throws XapiConfigurationException {
         for(StatementTrigger st : xapiConfig.statementTriggers){
-            try {
-                fomConfigValidator.validate(st);
-            } catch (RuntimeException e) {
-                logger.error("Invalid Statement Trigger (Invalid FOM reference): {}", st, e);
-                throw new XapiConfigurationException("Could not validate xAPI Configuration", e);
-            }
-            TriggerProcessingResult tpr = triggerProcessor.renderTemplateForValidation(
-                    st,
-                    new TestInjectionContext(st.type, st.clazz));
-            if (tpr.success()) {
-                if (!st.skipValidation) {
-                    StatementValidationResult svr = validator.validateStatement(tpr.statement());
-                    if (!svr.isValid()){
-                        logger.error("Invalid Statement Trigger (Invalid xAPI): {}. {}", st, svr.getErrors());
-                        throw new XapiConfigurationException("Could not validate xAPI Configuration");
-                    }
-                }
-            } else {
-                logger.error("Invalid Statement Trigger (Could not Process): {}. {}", st, tpr.error());
-                throw new XapiConfigurationException("Could not validate xAPI Configuration", tpr.error());
+            TriggerValidationEngine.Result result = TriggerValidationEngine.validate(
+                    st, fomConfigValidator, triggerProcessor, validator);
+            if (!result.valid()) {
+                logger.error("Invalid Statement Trigger ({}): {}. {}", result.stage(), st, result.message());
+                throw new XapiConfigurationException("Could not validate xAPI Configuration", result.cause());
             }
         }
     }

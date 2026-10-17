@@ -1,0 +1,29 @@
+{
+    "scope": "authoring",
+    "fom": "<objectModel><objects><objectClass><name>HLAobjectRoot</name><objectClass><name>World</name><attribute><name>StepNumber</name><dataType>HLAinteger32BE</dataType></attribute></objectClass></objectClass></objects><interactions><interactionClass><name>HLAinteractionRoot</name></interactionClass></interactions><dataTypes><basicDataRepresentations><basicData><name>HLAinteger32BE</name></basicData></basicDataRepresentations></dataTypes></objectModel>",
+    "config": {
+        "configVersion": "1.0",
+        "statementTriggers": [
+            {
+                "type": "ObjectUpdate",
+                "class": "World",
+                "statement": {
+                    "object": {
+                        "objectType": "Activity",
+                        "id": [
+                            "trigger",
+                            [
+                                "MissingId"
+                            ]
+                        ]
+                    }
+                }
+            },
+            {
+                "type": "ObjectUpdate",
+                "class": "MissingClass",
+                "statement": {}
+            }
+        ]
+    }
+}

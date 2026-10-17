@@ -1,0 +1,52 @@
+{
+    "scope": "authoring",
+    "fom": "<objectModel><modelIdentification><name>Validator Fixture</name><version>1.0</version></modelIdentification><objects><objectClass><name>HLAobjectRoot</name><objectClass><name>BaseEntity</name><attribute><name>EntityId</name><dataType>HLAASCIIstring</dataType></attribute><objectClass><name>TrackedEntity</name><attribute><name>Count</name><dataType>HLAinteger32BE</dataType></attribute></objectClass></objectClass></objectClass></objects><interactions><interactionClass><name>HLAinteractionRoot</name><interactionClass><name>StepCompleted</name><parameter><name>StepNumber</name><dataType>HLAinteger32BE</dataType></parameter></interactionClass></interactionClass></interactions><dataTypes><basicDataRepresentations><basicData><name>HLAinteger32BE</name></basicData></basicDataRepresentations></dataTypes></objectModel>",
+    "config": {
+        "configVersion": "1.0",
+        "statementTriggers": [
+            {
+                "type": "ObjectUpdate",
+                "class": "BaseEntity.TrackedEntity",
+                "statement": {
+                    "actor": {
+                        "objectType": "Agent",
+                        "account": {
+                            "homePage": "https://example.com/agents",
+                            "name": "validator"
+                        }
+                    },
+                    "verb": {
+                        "id": "https://example.com/verbs/observed",
+                        "display": {
+                            "en-US": "observed"
+                        }
+                    },
+                    "object": {
+                        "objectType": "Activity",
+                        "id": "https://example.com/activities/entity"
+                    },
+                    "context": {
+                        "extensions": {
+                            "https://example.com/extensions/count": [
+                                "trigger",
+                                [
+                                    "Count"
+                                ]
+                            ]
+                        }
+                    }
+                }
+            }
+        ],
+        "objectCache": {
+            "trackedObjects": [
+                {
+                    "class": "BaseEntity.TrackedEntity",
+                    "attributes": [
+                        "EntityId"
+                    ]
+                }
+            ]
+        }
+    }
+}
