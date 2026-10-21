@@ -1,69 +1,35 @@
 {
-  "statementTriggers": [
-    {
-      "type": "Interaction",
-      "class": "EntityMoved",
-      "criteria": [
-        [
-          "trigger",
-          [
-            "FromPosition",
-            "X"
-          ]
-        ],
-        "<",
-        [
-          "trigger",
-          [
-            "ToPosition",
-            "X"
-          ]
-        ]
-      ],
-      "statement": {
-        "actor": {
-          "objectType": "Agent",
-          "name": [
-            "trigger",
-            [
-              "EntityId"
-            ]
-          ],
-          "account": {
-            "homePage": "https://homepage.system.io",
-            "name": "Mr. <<[\"trigger\", [\"EntityId\"]]>>"
-          }
-        },
-        "context": {
-          "extensions": {
-            "https://yetanalytics.com/extensions/from-x": [
-              "trigger",
-              [
-                "FromPosition",
-                "X"
-              ]
+    "statementTriggers": [
+        {
+            "type": "Interaction",
+            "class": "EntityMoved",
+            "criteria": [
+                ["trigger", ["FromPosition", "X"]],
+                "<",
+                ["trigger", ["ToPosition", "X"]]
             ],
-            "https://yetanalytics.com/extensions/from-y": [
-              "trigger",
-              [
-                "FromPosition",
-                "Y"
-              ]
-            ]
-          }
-        },
-        "result": {
-          "response": "[<<[\"trigger\", [\"ToPosition\", \"X\"]]>>, <<[\"trigger\", [\"ToPosition\", \"Y\"]]>>]"
+            "statement": {
+                "actor": {
+                    "objectType": "Agent",
+                    "name": ["trigger", ["EntityId"]],
+                    "account": {
+                        "homePage": "https://homepage.system.io",
+                        "name": "Mr. <<[\"trigger\", [\"EntityId\"]]>>"
+                    }
+                },
+                "context": {
+                    "extensions":{
+                        "https://yetanalytics.com/extensions/from-x": ["trigger", ["FromPosition", "X"]],
+                        "https://yetanalytics.com/extensions/from-y": ["trigger", ["FromPosition", "Y"]]
+                    }
+                },
+                "result": {
+                    "response": "[<<[\"trigger\", [\"ToPosition\", \"X\"]]>>, <<[\"trigger\", [\"ToPosition\", \"Y\"]]>>]"
+                }
+            }
         }
-      }
+    ],
+"objectCache": {
+        "trackedObjects": [{"class":"*", "allAttributes": true}]
     }
-  ],
-  "objectCache": {
-    "trackedObjects": [
-      {
-        "class": "*",
-        "allAttributes": true
-      }
-    ]
-  }
 }
