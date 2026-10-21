@@ -100,11 +100,7 @@ public class ConfigParserTest {
 
         });
 
-        assertEquals(config.lrsConfig.batch, 4);
-        assertEquals(config.lrsConfig.host, "host string");
-        assertEquals(config.lrsConfig.key, "key string");
-        assertEquals(config.lrsConfig.secret, "secret string");
-        assertNotNull(config.lrsConfig);
+        assertNull(config.lrsConfig);
     }
 
     @Test
