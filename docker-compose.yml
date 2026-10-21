@@ -21,7 +21,7 @@ services:
       - lrs_db_data:/var/lib/postgresql
     environment:
       POSTGRES_USER: lrsql_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${LRSQL_DB_PASSWORD:?Set LRSQL_DB_PASSWORD}
       POSTGRES_DB: lrsql_db
     ports:
       - "5433:5433"
@@ -51,8 +51,8 @@ services:
   amq:
     image: apache/artemis:latest-alpine
     environment:
-      - ARTEMIS_USER=admin
-      - ARTEMIS_PASSWORD=admin
+      - ARTEMIS_USER=${ARTEMIS_USER:?Set ARTEMIS_USER}
+      - ARTEMIS_PASSWORD=${ARTEMIS_PASSWORD:?Set ARTEMIS_PASSWORD}
     ports:
       - "61616:61616"
       - "8161:8161"
