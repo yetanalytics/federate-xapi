@@ -248,8 +248,8 @@ class XapiClientTest {
     private static XapiConfig config(int batch, int maxRetries) {
         LrsConfig lrsConfig = new LrsConfig();
         lrsConfig.host = "https://example.com/xapi/";
-        lrsConfig.key = "key";
-        lrsConfig.secret = "secret";
+        lrsConfig.key = java.util.UUID.randomUUID().toString();
+        lrsConfig.secret = java.util.UUID.randomUUID().toString();
         lrsConfig.batch = batch;
         lrsConfig.maxRetries = maxRetries;
 
