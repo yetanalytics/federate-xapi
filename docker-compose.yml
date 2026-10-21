@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: hla_xapi
       POSTGRES_PASSWORD: ${SIM_DB_PASSWORD:?Set SIM_DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
       POSTGRES_PASSWORD: ${LRSQL_DB_PASSWORD:?Set LRSQL_DB_PASSWORD}
       POSTGRES_DB: lrsql_db
     ports:
-      - "5433:5433"
+      - "127.0.0.1:5433:5433"
     command: ["postgres", "-p", "5433"]
 
   lrs:
@@ -33,7 +33,7 @@ services:
     command:
       - /lrsql/bin/run_postgres.sh
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       - lrs-db
     environment:
@@ -54,8 +54,8 @@ services:
       - ARTEMIS_USER=${ARTEMIS_USER:?Set ARTEMIS_USER}
       - ARTEMIS_PASSWORD=${ARTEMIS_PASSWORD:?Set ARTEMIS_PASSWORD}
     ports:
-      - "61616:61616"
-      - "8161:8161"
+      - "127.0.0.1:61616:61616"
+      - "127.0.0.1:8161:8161"
 
 volumes:
   postgres-data:
