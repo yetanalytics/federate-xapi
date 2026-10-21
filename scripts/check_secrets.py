@@ -16,7 +16,7 @@ patterns = (
     re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----"),
     re.compile(r"\b(?:github_pat_|gh[pousr]_|xox[baprs]-|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,})"),
     re.compile(r"""(?i)(?:password|secret|api[_-]?key|access[_-]?token|bearer[_-]?token)\s*[:=]\s*['"][^'"$]{4,}['"]"""),
-    re.compile(r"(?i)\b(?:POSTGRES_PASSWORD|LRSQL_API_KEY_DEFAULT|LRSQL_API_SECRET_DEFAULT|LRSQL_ADMIN_PASS_DEFAULT|LRSQL_DB_PASSWORD|ARTEMIS_PASSWORD)\s*:\s*(?!\$\{)[^\s]+"),
+    re.compile(r"(?i)^\s*-?\s*(?:POSTGRES_PASSWORD|LRSQL_API_KEY_DEFAULT|LRSQL_API_SECRET_DEFAULT|LRSQL_ADMIN_PASS_DEFAULT|LRSQL_DB_PASSWORD|ARTEMIS_PASSWORD)\s*[:=]\s*(?!\$\{)[^\s]+"),
 )
 findings = []
 for name in tracked:
