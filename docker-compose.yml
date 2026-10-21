@@ -3,14 +3,14 @@ services:
     image: postgres:17
     environment:
       POSTGRES_DB: hla_xapi
-      POSTGRES_USER: hla_xapi
+      POSTGRES_USER: ${SIM_DB_USER:?Set SIM_DB_USER}
       POSTGRES_PASSWORD: ${SIM_DB_PASSWORD:?Set SIM_DB_PASSWORD}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hla_xapi -d hla_xapi"]
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -20,7 +20,7 @@ services:
     volumes:
       - lrs_db_data:/var/lib/postgresql
     environment:
-      POSTGRES_USER: lrsql_user
+      POSTGRES_USER: ${LRSQL_DB_USER:?Set LRSQL_DB_USER}
       POSTGRES_PASSWORD: ${LRSQL_DB_PASSWORD:?Set LRSQL_DB_PASSWORD}
       POSTGRES_DB: lrsql_db
     ports:
@@ -44,7 +44,7 @@ services:
       LRSQL_DB_HOST: lrs-db
       LRSQL_DB_PORT: 5433
       LRSQL_DB_NAME: lrsql_db
-      LRSQL_DB_USER: lrsql_user
+      LRSQL_DB_USER: ${LRSQL_DB_USER:?Set LRSQL_DB_USER}
       LRSQL_DB_PASSWORD: ${LRSQL_DB_PASSWORD:?Set LRSQL_DB_PASSWORD}
       # If Postgres is too slow to start, increase this
       LRSQL_POOL_INITIALIZATION_FAIL_TIMEOUT: 10000
