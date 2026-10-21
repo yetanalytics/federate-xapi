@@ -5,3 +5,19 @@ logs/
 *.sqlite
 lib/
 dependency-reduced-pom.xml
+
+# Local secrets and generated credential material
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.key
+*.keystore
+*.jks
+*.kdbx
+*credentials*.json
+*secrets*.json
+.npmrc
+.netrc
