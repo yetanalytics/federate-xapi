@@ -9,6 +9,6 @@ public class LrsConfig {
 
     @Override
     public String toString() {
-        return String.format("LrsConfig{host=%s,key=%s,batch=%d,maxRetries=%d}", host, key, batch, maxRetries);
+        return String.format("LrsConfig{host=%s,batch=%d,maxRetries=%d}", host, batch, maxRetries);
     }
 }
