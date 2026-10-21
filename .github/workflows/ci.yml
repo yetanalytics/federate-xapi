@@ -21,5 +21,8 @@ jobs:
                   java-version: "21"
                   cache: maven
 
+            - name: Reject committed credentials
+              run: python3 scripts/check_secrets.py
+
             - name: Verify
               run: make verify
