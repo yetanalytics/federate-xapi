@@ -79,6 +79,14 @@ public class ConfigParser {
         // lrs
         if (root.has("lrs")) {
             cfg.lrsConfig = mapper.convertValue(root.get("lrs"), LrsConfig.class);
+            // Runtime credentials take precedence and must never be serialized into source.
+            String key = System.getenv("LRS_KEY");
+            String secret = System.getenv("LRS_SECRET");
+            if (key == null || key.isBlank() || secret == null || secret.isBlank()) {
+                throw new IllegalArgumentException("LRS_KEY and LRS_SECRET are required");
+            }
+            cfg.lrsConfig.key = key;
+            cfg.lrsConfig.secret = secret;
         }
 
         // object cache
