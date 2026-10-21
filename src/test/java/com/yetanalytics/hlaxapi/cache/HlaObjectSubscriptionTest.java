@@ -1439,8 +1439,8 @@ class HlaObjectSubscriptionTest {
         private static XapiConfig clientConfig() {
             LrsConfig lrs = new LrsConfig();
             lrs.host = "https://example.com/xapi/";
-            lrs.key = "key";
-            lrs.secret = "secret";
+            lrs.key = java.util.UUID.randomUUID().toString();
+            lrs.secret = java.util.UUID.randomUUID().toString();
             lrs.batch = 10;
             lrs.maxRetries = 1;
             XapiConfig config = new XapiConfig();
